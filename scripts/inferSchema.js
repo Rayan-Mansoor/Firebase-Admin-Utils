@@ -3,24 +3,16 @@
 // - Root YAML excludes project/collection keys (avoids redundancy).
 // - `example` includes one doc from each direct subcollection of the example doc when INCLUDE_SUBCOLLECTIONS=true.
 // - Final `meta` only: sample_limit, docs_sampled, include_subcollections.
-const { db } = require("../firebaseAdmin");
+const { db, admin } = require("../firebaseAdmin");
 
 /* ----------------------------- CONFIG ----------------------------- */
 const CONFIG = {
-  COLLECTION_PATH: "weekly_lessons",  // e.g. "users" or "schools/ALCE/classes"
+  COLLECTION_PATH: "users",  // e.g. "users" or "schools/ALCE/classes"
   INCLUDE_SUBCOLLECTIONS: true,       // merge subcollection schemas + include subexamples
   SAMPLE_LIMIT: undefined,            // e.g., 500 (undefined => scan all)
   INCLUDE_EXAMPLE: true,              // include a representative example document
   EXAMPLE_SUBDOCS_PER_SUBCOLLECTION: 1, // how many example docs per subcollection of the example doc
 };
-/* ------------------------------------------------------------------ */
-
-const PROJECT_ID =
-  admin.app().options.projectId ||
-  serviceAccount.project_id ||
-  process.env.GOOGLE_CLOUD_PROJECT ||
-  process.env.GCLOUD_PROJECT ||
-  "(unknown)";
 
 /* -------------------------- type + aggs -------------------------- */
 function isPlainObject(v) { return Object.prototype.toString.call(v) === "[object Object]"; }

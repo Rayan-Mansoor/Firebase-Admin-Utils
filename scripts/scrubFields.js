@@ -22,14 +22,14 @@ const { db, FieldValue } = require("../firebaseAdmin");
 const CONFIG = {
   COLLECTION: "users",
   USE_COLLECTION_GROUP: false,
-  FIELD_PATHS: ["arrivalInfo.arrivalTime"],
+  FIELD_PATHS: ["progress.firstTestCompletedAt"],
 
   // Example: remove "teacherName" from objects in the "slots" array
   ARRAY_CLEANERS: [],
 
   WHERE: [],
   DOC_IDS: [],
-  HARD_DELETE: true, // <-- set to false to null fields/keys instead of deleting them
+  HARD_DELETE: false, // <-- set to false to null fields/keys instead of deleting them
   BATCH_SIZE: 400,
   DRY_RUN: false,
 };
