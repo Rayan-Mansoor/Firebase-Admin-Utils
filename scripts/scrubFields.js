@@ -1,6 +1,7 @@
 // scripts/scrubFields.js
 // Scrub fields across a collection (or collectionGroup) — delete them or null them,
-// and optionally strip keys from objects inside array fields.
+// optionally strip keys from objects inside array fields,
+// and optionally delete entire subcollections from matched documents.
 //
 // Usage: set CONFIG below and run: `node scripts/scrubFields.js`
 
@@ -13,25 +14,27 @@ const { db, FieldValue } = require("../firebaseAdmin");
  * - FIELD_PATHS: array of field paths to scrub (supports dotted map paths; NOT array indexing)
  * - ARRAY_CLEANERS: [{ arrayPath, deleteKeys[] }]
  *     For each object in arrayPath, delete or null the given keys (keys can be dotted for nested maps)
+ * - SUBCOLLECTIONS_TO_DELETE: array of subcollection names to recursively delete from each matched doc
+ *     e.g., ['notifications', 'activity_logs']
+ *     ⚠️  This is a HARD DELETE — subcollection docs are permanently removed regardless of HARD_DELETE setting.
  * - WHERE: optional filters: [ [field, op, value], ... ]
  * - DOC_IDS: optional list of doc IDs (top-level COLLECTION mode only)
  * - HARD_DELETE: true = delete fields; false = set fields/keys to null
+ *     (does NOT affect SUBCOLLECTIONS_TO_DELETE — those are always hard-deleted)
  * - BATCH_SIZE: commit size (≤ 500; keep a safety margin)
  * - DRY_RUN: log what would happen without writing
  */
 const CONFIG = {
   COLLECTION: "users",
   USE_COLLECTION_GROUP: false,
-  FIELD_PATHS: ["progress.firstTestCompletedAt"],
-
-  // Example: remove "teacherName" from objects in the "slots" array
+  FIELD_PATHS: [],              // nothing to scrub
   ARRAY_CLEANERS: [],
-
+  SUBCOLLECTIONS_TO_DELETE: ["notificationReceipts"],
   WHERE: [],
   DOC_IDS: [],
-  HARD_DELETE: false, // <-- set to false to null fields/keys instead of deleting them
+  HARD_DELETE: false,
   BATCH_SIZE: 400,
-  DRY_RUN: false,
+  DRY_RUN: false,                // run dry first to see the counts
 };
 
 function validateConfig() {
@@ -43,6 +46,14 @@ function validateConfig() {
   }
   if (!Array.isArray(CONFIG.ARRAY_CLEANERS)) {
     throw new Error("CONFIG.ARRAY_CLEANERS must be an array.");
+  }
+  if (!Array.isArray(CONFIG.SUBCOLLECTIONS_TO_DELETE)) {
+    throw new Error("CONFIG.SUBCOLLECTIONS_TO_DELETE must be an array.");
+  }
+  for (const name of CONFIG.SUBCOLLECTIONS_TO_DELETE) {
+    if (typeof name !== "string" || !name.trim()) {
+      throw new Error(`Invalid subcollection name: "${name}"`);
+    }
   }
   if (!Array.isArray(CONFIG.WHERE)) {
     throw new Error("CONFIG.WHERE must be an array.");
@@ -95,8 +106,51 @@ function unsetByPath(obj, path) {
   if (cur && typeof cur === "object") delete cur[parts[parts.length - 1]];
 }
 
+/**
+ * Recursively delete all documents in a subcollection (and their nested subcollections).
+ * Uses batched deletes with the configured BATCH_SIZE.
+ * Returns the total number of documents deleted.
+ */
+async function deleteSubcollection(parentRef, subcollectionName) {
+  const colRef = parentRef.collection(subcollectionName);
+  let totalDeleted = 0;
+
+  // Process in pages to avoid loading everything into memory
+  let query = colRef.limit(CONFIG.BATCH_SIZE);
+
+  while (true) {
+    const snap = await query.get();
+    if (snap.empty) break;
+
+    // Recurse into nested subcollections of each doc before deleting it
+    for (const doc of snap.docs) {
+      const nestedCols = await doc.ref.listCollections();
+      for (const nested of nestedCols) {
+        totalDeleted += await deleteSubcollection(doc.ref, nested.id);
+      }
+    }
+
+    // Batch-delete this page of docs
+    const batch = db.batch();
+    for (const doc of snap.docs) {
+      batch.delete(doc.ref);
+    }
+    await batch.commit();
+    totalDeleted += snap.docs.length;
+  }
+
+  return totalDeleted;
+}
+
+/**
+ * Count documents in a subcollection (non-recursive, top-level only) for dry-run reporting.
+ */
+async function countSubcollectionDocs(parentRef, subcollectionName) {
+  const snap = await parentRef.collection(subcollectionName).count().get();
+  return snap.data().count;
+}
+
 async function getTargets() {
-  // Return DocumentSnapshots so we can transform arrays
   if (!CONFIG.USE_COLLECTION_GROUP) {
     const colRef = db.collection(CONFIG.COLLECTION);
 
@@ -132,6 +186,15 @@ async function getTargets() {
 
 async function scrubFields() {
   validateConfig();
+
+  const hasFieldWork = CONFIG.FIELD_PATHS.length > 0 || CONFIG.ARRAY_CLEANERS.length > 0;
+  const hasSubcolWork = CONFIG.SUBCOLLECTIONS_TO_DELETE.length > 0;
+
+  if (!hasFieldWork && !hasSubcolWork) {
+    console.log("Nothing to do — FIELD_PATHS, ARRAY_CLEANERS, and SUBCOLLECTIONS_TO_DELETE are all empty.");
+    return { updated: 0, subcollectionDocsDeleted: 0 };
+  }
+
   console.log(
     "CONFIG:",
     JSON.stringify(
@@ -140,6 +203,7 @@ async function scrubFields() {
         USE_COLLECTION_GROUP: CONFIG.USE_COLLECTION_GROUP,
         FIELD_PATHS: CONFIG.FIELD_PATHS,
         ARRAY_CLEANERS: CONFIG.ARRAY_CLEANERS,
+        SUBCOLLECTIONS_TO_DELETE: CONFIG.SUBCOLLECTIONS_TO_DELETE,
         WHERE: CONFIG.WHERE,
         DOC_IDS: CONFIG.DOC_IDS.length,
         HARD_DELETE: CONFIG.HARD_DELETE,
@@ -151,79 +215,117 @@ async function scrubFields() {
     )
   );
 
-  const fieldMap = buildFieldUpdateMap(CONFIG.FIELD_PATHS, CONFIG.HARD_DELETE);
+  const fieldMap = hasFieldWork ? buildFieldUpdateMap(CONFIG.FIELD_PATHS, CONFIG.HARD_DELETE) : {};
   const targets = await getTargets();
 
   if (targets.length === 0) {
     console.log("No documents matched the criteria. Nothing to do.");
-    return { updated: 0 };
+    return { updated: 0, subcollectionDocsDeleted: 0 };
   }
 
   console.log(`Matched ${targets.length} document(s).`);
 
+  // --- DRY RUN ---
   if (CONFIG.DRY_RUN) {
     const sampleCount = Math.min(10, targets.length);
     console.log(`DRY_RUN is ON — showing up to ${sampleCount} sample refs:`);
-    for (let i = 0; i < sampleCount; i++) console.log(` - ${targets[i].ref.path}`);
-    console.log("No writes performed.");
-    return { updated: 0, dryRun: true };
-  }
 
-  let batch = db.batch();
-  let ops = 0;
-  let updated = 0;
+    for (let i = 0; i < sampleCount; i++) {
+      const ref = targets[i].ref;
+      console.log(` - ${ref.path}`);
 
-  async function commitIfNeeded(force = false) {
-    if (ops >= CONFIG.BATCH_SIZE || force) {
-      await batch.commit();
-      batch = db.batch();
-      ops = 0;
-    }
-  }
-
-  for (const snap of targets) {
-    const data = snap.data() || {};
-    const update = { ...fieldMap };
-    let changed = false;
-
-    // Apply ARRAY_CLEANERS
-    for (const rule of CONFIG.ARRAY_CLEANERS) {
-      const arr = getByPath(data, rule.arrayPath);
-      if (!Array.isArray(arr)) continue;
-
-      const newArr = arr.map((item) => {
-        if (!item || typeof item !== "object" || Array.isArray(item)) return item;
-        const clone = { ...item };
-        for (const key of rule.deleteKeys) {
-          if (CONFIG.HARD_DELETE) {
-            unsetByPath(clone, key);
-          } else {
-            setByPath(clone, key, null);
-          }
+      if (hasSubcolWork) {
+        for (const subName of CONFIG.SUBCOLLECTIONS_TO_DELETE) {
+          const count = await countSubcollectionDocs(ref, subName);
+          console.log(`     └─ ${subName}: ${count} doc(s) would be deleted`);
         }
-        return clone;
-      });
-
-      if (JSON.stringify(newArr) !== JSON.stringify(arr)) {
-        update[rule.arrayPath] = newArr;
-        changed = true;
       }
     }
 
-    // If we only null fields and none of the array updates changed,
-    // we may still have map updates in `update` from FIELD_PATHS.
-    // Firestore is fine updating with keys that didn't exist before (will set nulls).
+    console.log("No writes performed.");
+    return { updated: 0, subcollectionDocsDeleted: 0, dryRun: true };
+  }
 
-    if (Object.keys(update).length > 0 || changed) {
-      batch.update(snap.ref, update);
-      ops++;
-      updated++;
-      if (ops >= CONFIG.BATCH_SIZE) await commitIfNeeded();
+  // --- FIELD SCRUBBING ---
+  let updated = 0;
+
+  if (hasFieldWork) {
+    let batch = db.batch();
+    let ops = 0;
+
+    async function commitIfNeeded(force = false) {
+      if (ops >= CONFIG.BATCH_SIZE || force) {
+        await batch.commit();
+        batch = db.batch();
+        ops = 0;
+      }
+    }
+
+    for (const snap of targets) {
+      const data = snap.data() || {};
+      const update = { ...fieldMap };
+      let changed = false;
+
+      for (const rule of CONFIG.ARRAY_CLEANERS) {
+        const arr = getByPath(data, rule.arrayPath);
+        if (!Array.isArray(arr)) continue;
+
+        const newArr = arr.map((item) => {
+          if (!item || typeof item !== "object" || Array.isArray(item)) return item;
+          const clone = { ...item };
+          for (const key of rule.deleteKeys) {
+            if (CONFIG.HARD_DELETE) {
+              unsetByPath(clone, key);
+            } else {
+              setByPath(clone, key, null);
+            }
+          }
+          return clone;
+        });
+
+        if (JSON.stringify(newArr) !== JSON.stringify(arr)) {
+          update[rule.arrayPath] = newArr;
+          changed = true;
+        }
+      }
+
+      if (Object.keys(update).length > 0 || changed) {
+        batch.update(snap.ref, update);
+        ops++;
+        updated++;
+        if (ops >= CONFIG.BATCH_SIZE) await commitIfNeeded();
+      }
+    }
+
+    await commitIfNeeded(true);
+  }
+
+  // --- SUBCOLLECTION DELETION ---
+  let subcollectionDocsDeleted = 0;
+
+  if (hasSubcolWork) {
+    console.log(`Deleting subcollections: [${CONFIG.SUBCOLLECTIONS_TO_DELETE.join(", ")}]`);
+
+    for (let i = 0; i < targets.length; i++) {
+      const ref = targets[i].ref;
+
+      for (const subName of CONFIG.SUBCOLLECTIONS_TO_DELETE) {
+        const deleted = await deleteSubcollection(ref, subName);
+        subcollectionDocsDeleted += deleted;
+
+        if (deleted > 0) {
+          console.log(`  ${ref.path}/${subName}: deleted ${deleted} doc(s)`);
+        }
+      }
+
+      // Progress log every 100 parent docs
+      if ((i + 1) % 100 === 0) {
+        console.log(`  … processed ${i + 1}/${targets.length} parent docs`);
+      }
     }
   }
 
-  await commitIfNeeded(true);
-  return { updated };
+  return { updated, subcollectionDocsDeleted };
 }
 
 (async () => {
@@ -232,7 +334,11 @@ async function scrubFields() {
     if (res.dryRun) {
       console.log("✅ DRY RUN complete.");
     } else {
-      console.log(`✅ Done. Updated ${res.updated} document(s).`);
+      const parts = [];
+      if (res.updated > 0) parts.push(`updated ${res.updated} document(s)`);
+      if (res.subcollectionDocsDeleted > 0)
+        parts.push(`deleted ${res.subcollectionDocsDeleted} subcollection doc(s)`);
+      console.log(`✅ Done. ${parts.length ? parts.join(", ") : "No changes needed."}`);
     }
   } catch (e) {
     console.error("❌ Error:", e.message);

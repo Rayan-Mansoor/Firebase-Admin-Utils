@@ -1,18 +1,54 @@
 // scripts/inferSchema.js
-// LLM-friendly YAML profile for a Firestore collection.
+// LLM-friendly YAML profile for a Firestore collection (or entire database).
+// - COLLECTION_PATH = "*" => scan ALL root-level collections.
 // - Root YAML excludes project/collection keys (avoids redundancy).
 // - `example` includes one doc from each direct subcollection of the example doc when INCLUDE_SUBCOLLECTIONS=true.
 // - Final `meta` only: sample_limit, docs_sampled, include_subcollections.
+// - OUTPUT_FILE: optional path to write the YAML output to a .txt file.
 const { db, admin } = require("../firebaseAdmin");
+const fs = require("fs");
+const path = require("path");
 
 /* ----------------------------- CONFIG ----------------------------- */
 const CONFIG = {
-  COLLECTION_PATH: "users",  // e.g. "users" or "schools/ALCE/classes"
-  INCLUDE_SUBCOLLECTIONS: true,       // merge subcollection schemas + include subexamples
-  SAMPLE_LIMIT: undefined,            // e.g., 500 (undefined => scan all)
-  INCLUDE_EXAMPLE: true,              // include a representative example document
-  EXAMPLE_SUBDOCS_PER_SUBCOLLECTION: 1, // how many example docs per subcollection of the example doc
+  COLLECTION_PATH: "*",                // "*" => all root collections; or e.g. "users", "schools/ALCE/classes"
+  INCLUDE_SUBCOLLECTIONS: true,        // merge subcollection schemas + include subexamples
+  SAMPLE_LIMIT: undefined,             // e.g., 500 (undefined => scan all)
+  INCLUDE_EXAMPLE: true,               // include a representative example document
+  EXAMPLE_SUBDOCS_PER_SUBCOLLECTION: 1,// how many example docs per subcollection of the example doc
+  SUBCOLLECTION_DISCOVERY_LIMIT: null,   // only probe this many docs for subcollection names (null => all)
+  CONCURRENCY: 5,                      // max parallel Firestore operations
+  OUTPUT_FILE: null,                   // e.g. "./schema-output.txt" (null => console only)
 };
+
+/* ----------------------------- output helper ----------------------------- */
+const outputLines = [];
+function emit(line = "") {
+  console.log(line);
+  if (CONFIG.OUTPUT_FILE) outputLines.push(line);
+}
+function flushOutput() {
+  if (!CONFIG.OUTPUT_FILE || !outputLines.length) return;
+  const resolved = path.resolve(CONFIG.OUTPUT_FILE);
+  const dir = path.dirname(resolved);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(resolved, outputLines.join("\n"), "utf-8");
+  console.log(`\n📄 Output written to: ${resolved}`);
+}
+
+/* ----------------------------- concurrency helper ----------------------------- */
+async function parallelMap(items, fn, concurrency = CONFIG.CONCURRENCY) {
+  const results = new Array(items.length);
+  let idx = 0;
+  async function worker() {
+    while (idx < items.length) {
+      const i = idx++;
+      results[i] = await fn(items[i], i);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, () => worker()));
+  return results;
+}
 
 /* -------------------------- type + aggs -------------------------- */
 function isPlainObject(v) { return Object.prototype.toString.call(v) === "[object Object]"; }
@@ -86,21 +122,129 @@ function addObjectSample(objAgg, obj) {
   }
 }
 
-/* ----------------------- dictionary heuristic ---------------------- */
-function maybeAsMap(objAgg) {
-  const props = [...objAgg.properties.entries()];
-  if (!props.length) return null;
-  const total = objAgg.totalSeen;
-  for (const [, fa] of props) if (fa.presentCount === total) return null; // stable keys -> fixed shape
+/* ----------------------- dictionary / map heuristic ---------------------- */
+// Patterns that strongly suggest dynamic/map keys
+const DYNAMIC_KEY_PATTERNS = [
+  /^\d{4}-\d{2}-\d{2}$/,                   // ISO date: 2026-03-25
+  /^\d{1,2}:\d{2}-\d{1,2}:\d{2}$/,         // time range: 09:00-11:00
+  /^[A-Za-z0-9]{20,}$/,                     // Firebase UID / long alphanum ID
+  /^[0-9a-f]{8}-[0-9a-f]{4}-/i,            // UUID prefix
+  /^\d{10,13}$/,                            // Unix timestamp (sec or ms)
+];
+
+function looksLikeDynamicKeys(keys) {
+  if (keys.length === 0) return false;
+  const dynamicCount = keys.filter(k => DYNAMIC_KEY_PATTERNS.some(p => p.test(k))).length;
+  return dynamicCount / keys.length >= 0.5;
+}
+
+/**
+ * Infer the value kind across all properties of a suspected map object.
+ * If all values share the same single kind, return a descriptive type string.
+ * For object values, recursively summarize the merged shape.
+ */
+function inferMapValueSummary(props, parentTotalSeen) {
   const kinds = [];
   for (const [, fa] of props) {
-    if (fa.variants.length !== 1) return null;
-    const k = fa.variants[0].kind;
-    if (!["boolean", "string", "number"].includes(k)) return null;
-    kinds.push(k);
+    const nonNull = fa.variants.filter(v => v.kind !== "null");
+    if (nonNull.length !== 1) return { mapValueType: "any" };
+    kinds.push(nonNull[0].kind);
   }
+  if (!kinds.length) return { mapValueType: "any" };
   const first = kinds[0];
-  return kinds.every(k => k === first) ? first : null;
+  if (!kinds.every(k => k === first)) return { mapValueType: "any" };
+
+  // For object map values, merge all child object aggregates and summarize their shape
+  if (first === "object") {
+    const mergedObjAgg = makeObjectAgg();
+    for (const [, fa] of props) {
+      const objVariant = fa.variants.find(v => v.kind === "object");
+      if (!objVariant) continue;
+      mergedObjAgg.totalSeen += objVariant.object.totalSeen;
+      for (const [ck, cfa] of objVariant.object.properties.entries()) {
+        let existing = mergedObjAgg.properties.get(ck);
+        if (!existing) {
+          mergedObjAgg.properties.set(ck, cfa);
+        } else {
+          // Merge: combine presentCount and variants
+          existing.presentCount += cfa.presentCount;
+          for (const cv of cfa.variants) {
+            let ev = existing.variants.find(x => x.kind === cv.kind);
+            if (!ev) {
+              existing.variants.push(cv);
+            } else {
+              ev.count += cv.count;
+              if (cv.kind === "object" && cv.object) {
+                // Deep-merge object aggs
+                ev.object.totalSeen += cv.object.totalSeen;
+                for (const [gk, gfa] of cv.object.properties.entries()) {
+                  let gexisting = ev.object.properties.get(gk);
+                  if (!gexisting) { ev.object.properties.set(gk, gfa); }
+                  else { gexisting.presentCount += gfa.presentCount; }
+                }
+              }
+              if (cv.kind === "array" && cv.array) {
+                ev.array.totalSeen += cv.array.totalSeen;
+                ev.array.emptyCount += cv.array.emptyCount;
+              }
+              if (cv.kind === "number" && cv.number) {
+                if (!cv.number.integerOnly) ev.number.integerOnly = false;
+              }
+            }
+          }
+        }
+      }
+    }
+    // Now summarize the merged shape — but apply map detection recursively
+    const valueFields = {};
+    for (const [k, childFA] of mergedObjAgg.properties.entries()) {
+      valueFields[k] = summarizeField(childFA, mergedObjAgg.totalSeen);
+    }
+    return { mapValueType: "object", valueFields };
+  }
+
+  // For arrays as map values
+  if (first === "array") return { mapValueType: "array" };
+
+  // Simple types
+  if (first === "number") {
+    const allInt = props.every(([, fa]) => {
+      const nv = fa.variants.find(v => v.kind === "number");
+      return nv && nv.number && nv.number.integerOnly;
+    });
+    return { mapValueType: allInt ? "integer" : "number" };
+  }
+
+  return { mapValueType: first };
+}
+
+function maybeAsMap(objAgg, parentTotalSeen) {
+  const props = [...objAgg.properties.entries()];
+  if (!props.length) return null;
+
+  const keys = props.map(([k]) => k);
+  const total = objAgg.totalSeen;
+
+  // 1. Pattern-based: if keys look like dates, UIDs, time ranges, etc. → map
+  if (looksLikeDynamicKeys(keys)) {
+    return inferMapValueSummary(props, total);
+  }
+
+  // 2. Cardinality-based: many unique keys relative to docs seen → likely a map
+  if (keys.length > Math.max(total * 2, 10)) {
+    return inferMapValueSummary(props, total);
+  }
+
+  // 3. All keys present in every sample → fixed shape, not a map
+  const allStable = props.every(([, fa]) => fa.presentCount === total);
+  if (allStable) return null;
+
+  // 4. Sparse keys with uniform value types → map
+  //    Only trigger if enough keys are sparse (>50% of keys appear in < all samples)
+  const sparseCount = props.filter(([, fa]) => fa.presentCount < total).length;
+  if (sparseCount / keys.length < 0.5) return null;
+
+  return inferMapValueSummary(props, total);
 }
 
 /* --------------------------- field summary -------------------------- */
@@ -141,8 +285,20 @@ function summarizeField(fa, parentTotalSeen) {
       return { type: "array", items: itemsSummary, required, nullable: isNullable };
     }
     case "object": {
-      const mapValueKind = maybeAsMap(v.object);
-      if (mapValueKind) return { type: `map<string, ${mapValueKind}>`, required, nullable: isNullable };
+      const mapResult = maybeAsMap(v.object, parentTotalSeen);
+      if (mapResult) {
+        // Simple map type: map<string, boolean>, map<string, string>, etc.
+        if (mapResult.mapValueType !== "object" || !mapResult.valueFields) {
+          return { type: `map<string, ${mapResult.mapValueType}>`, required, nullable: isNullable };
+        }
+        // Map with object values: show the merged inner shape
+        return {
+          type: "map<string, object>",
+          required,
+          nullable: isNullable,
+          valueShape: mapResult.valueFields,
+        };
+      }
       const fields = {};
       const req = [];
       for (const [k, childFA] of v.object.properties.entries()) {
@@ -184,21 +340,30 @@ function pickExampleDoc(docSnaps) {
   }
   return best;
 }
-async function buildExampleBlockForDoc(docSnap) {
+async function buildExampleBlockForDoc(docSnap, knownSubIds) {
   const example = { document: sanitizeForExample(docSnap.data()) };
 
   if (!CONFIG.INCLUDE_SUBCOLLECTIONS) return example;
 
-  const subcols = await docSnap.ref.listCollections();
+  // Reuse already-discovered subcollection IDs if available, else discover
+  const subcols = knownSubIds
+    ? knownSubIds.map(id => docSnap.ref.collection(id))
+    : await docSnap.ref.listCollections();
+
   if (!subcols.length) return example;
 
   example.subcollections = {};
-  for (const col of subcols) {
-    let q = col.limit(Math.max(1, CONFIG.EXAMPLE_SUBDOCS_PER_SUBCOLLECTION | 0));
-    const snap = await q.get();
-    if (snap.empty) continue;
-    example.subcollections[col.id] = snap.docs.map(d => sanitizeForExample(d.data()));
+  const subResults = await parallelMap(subcols, async (col) => {
+    const colRef = typeof col === "string" ? docSnap.ref.collection(col) : col;
+    const snap = await colRef.limit(Math.max(1, CONFIG.EXAMPLE_SUBDOCS_PER_SUBCOLLECTION | 0)).get();
+    if (snap.empty) return null;
+    return { id: colRef.id, docs: snap.docs.map(d => sanitizeForExample(d.data())) };
+  });
+
+  for (const r of subResults) {
+    if (r) example.subcollections[r.id] = r.docs;
   }
+  if (!Object.keys(example.subcollections).length) delete example.subcollections;
   return example;
 }
 
@@ -236,51 +401,64 @@ async function fetchDocs(collectionPath) {
   return snap.docs;
 }
 
+/* --------------- Discover subcollection names (sampled) --------------- */
+async function discoverSubcollectionIds(docs) {
+  const limit = CONFIG.SUBCOLLECTION_DISCOVERY_LIMIT;
+  const probe = (typeof limit === "number" && limit > 0) ? docs.slice(0, limit) : docs;
+
+  const subIds = new Set();
+  await parallelMap(probe, async (d) => {
+    const cols = await d.ref.listCollections();
+    cols.forEach(c => subIds.add(c.id));
+  });
+  return [...subIds];
+}
+
 /* --------------------- Build profile + subcollections -------------------- */
 async function buildProfile(collectionPath) {
+  const startTime = Date.now();
   const docs = await fetchDocs(collectionPath);
   const agg = makeObjectAgg();
   docs.forEach(d => addObjectSample(agg, d.data()));
+  console.log(`  ${collectionPath}: ${docs.length} docs fetched (${Date.now() - startTime}ms)`);
 
   const mainProfile = profileFromAgg(collectionPath, agg);
 
   // subcollection schemas
   let subprofiles = undefined;
+  let subIds = [];
   if (CONFIG.INCLUDE_SUBCOLLECTIONS && docs.length) {
-    const subIds = new Set();
-    for (const d of docs) {
-      const cols = await d.ref.listCollections();
-      cols.forEach(c => subIds.add(c.id));
-    }
-    if (subIds.size) {
+    subIds = await discoverSubcollectionIds(docs);
+    console.log(`  ${collectionPath}: subcollections found: ${subIds.length ? subIds.join(", ") : "(none)"}`);
+
+    if (subIds.length) {
       subprofiles = {};
+
       for (const subId of subIds) {
         const subAgg = makeObjectAgg();
-        for (const d of docs) {
+        await parallelMap(docs, async (d) => {
           let q = d.ref.collection(subId);
           if (typeof CONFIG.SAMPLE_LIMIT === "number" && CONFIG.SAMPLE_LIMIT > 0) q = q.limit(CONFIG.SAMPLE_LIMIT);
           const ssnap = await q.get();
           ssnap.forEach(s => addObjectSample(subAgg, s.data()));
-        }
+        });
         if (subAgg.totalSeen > 0) {
           subprofiles[subId] = profileFromAgg(`${collectionPath}/{doc}/${subId}`, subAgg);
+          console.log(`    ↳ ${subId}: ${subAgg.totalSeen} subdocs sampled`);
         }
       }
     }
   }
 
-  // example (AFTER subcollections)
+  // example — reuse discovered subIds to avoid duplicate listCollections()
   let exampleBlock = null;
   if (CONFIG.INCLUDE_EXAMPLE && docs.length) {
     const chosen = pickExampleDoc(docs);
-    if (chosen) exampleBlock = await buildExampleBlockForDoc(chosen);
+    if (chosen) exampleBlock = await buildExampleBlockForDoc(chosen, subIds.length ? subIds : null);
   }
 
-  // Assemble final YAML object in desired order: document -> subcollections -> example -> meta
-  const out = {
-    document: mainProfile.document,
-  };
-  if (subprofiles) out.subcollections = subprofiles;
+  const out = { document: mainProfile.document };
+  if (subprofiles && Object.keys(subprofiles).length) out.subcollections = subprofiles;
   if (exampleBlock) out.example = exampleBlock;
   out.meta = {
     sample_limit: (typeof CONFIG.SAMPLE_LIMIT === "number" ? CONFIG.SAMPLE_LIMIT : null),
@@ -288,16 +466,67 @@ async function buildProfile(collectionPath) {
     include_subcollections: !!CONFIG.INCLUDE_SUBCOLLECTIONS,
   };
 
+  console.log(`  ${collectionPath}: done (${Date.now() - startTime}ms total)\n`);
   return out;
+}
+
+/* --------------------- Build full database profile -------------------- */
+async function buildFullDatabaseProfile() {
+  const rootCollections = await db.listCollections();
+
+  if (!rootCollections.length) {
+    console.log("No root-level collections found.");
+    return null;
+  }
+
+  console.log(`Found ${rootCollections.length} root-level collection(s): ${rootCollections.map(c => c.id).join(", ")}\n`);
+
+  const database = {};
+  const colIds = rootCollections.map(c => c.id);
+
+  const results = await parallelMap(colIds, async (colId) => {
+    try {
+      const profile = await buildProfile(colId);
+      return { colId, profile };
+    } catch (e) {
+      console.error(`⚠️  Failed to profile "${colId}": ${e.message}`);
+      return { colId, profile: { error: e.message } };
+    }
+  });
+
+  for (const { colId, profile } of results) {
+    database[colId] = profile;
+  }
+
+  return database;
 }
 
 /* -------------------------------- RUN -------------------------------- */
 (async () => {
   try {
-    console.log(`collection: ${CONFIG.COLLECTION_PATH}`);
+    const totalStart = Date.now();
+    const scanAll = CONFIG.COLLECTION_PATH === "*";
 
-    const profile = await buildProfile(CONFIG.COLLECTION_PATH);
-    console.log(toYAML(profile));
+    if (scanAll) {
+      console.log("Mode: Full database scan\n");
+      const database = await buildFullDatabaseProfile();
+      if (database) {
+        emit("========== FULL DATABASE SCHEMA ==========");
+        emit("");
+        for (const [colId, profile] of Object.entries(database)) {
+          emit(`# collection: ${colId}`);
+          emit(toYAML(profile));
+          emit("");
+        }
+      }
+    } else {
+      emit(`collection: ${CONFIG.COLLECTION_PATH}`);
+      const profile = await buildProfile(CONFIG.COLLECTION_PATH);
+      emit(toYAML(profile));
+    }
+
+    flushOutput();
+    console.log(`\nCompleted in ${((Date.now() - totalStart) / 1000).toFixed(1)}s`);
   } catch (e) {
     console.error("❌ Error:", e.message);
     process.exit(1);

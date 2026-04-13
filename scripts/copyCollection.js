@@ -14,8 +14,8 @@ const { db } = require("../firebaseAdmin");
  * - DRY_RUN: log planned operations without writing/deleting
  */
 const CONFIG = {
-  SOURCE_COLLECTION: "food_orders",
-  DESTINATION_COLLECTION: "norders",
+  SOURCE_COLLECTION: "users",
+  DESTINATION_COLLECTION: "app_users",
   INCLUDE_SUBCOLLECTIONS: false,
   IS_DESTRUCTIVE: false,
   BATCH_SIZE: 400,
