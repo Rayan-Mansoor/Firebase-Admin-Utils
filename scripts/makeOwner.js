@@ -1,5 +1,5 @@
 // scripts/makeOwner.js
-require("../firebaseAdmin");
+const { admin } = require("../firebaseAdmin");
 
 const CONFIG = {
   EMAIL: "alcebologna@gmail.com", // <- put your email here (or set UID instead)

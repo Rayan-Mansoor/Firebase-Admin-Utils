@@ -1,5 +1,5 @@
 // scripts/setAdminStatus.js
-const { auth, db } = require("../firebaseAdmin");
+const { auth, db, admin } = require("../firebaseAdmin");
 
 
 // 2) Simple config block you can edit before running
