@@ -83,6 +83,32 @@ function getLevelOrderStrict(levelKey) {
   return order;
 }
 
+// ---------- Sections ("bis", "ter", ...) ----------
+// Mirrors functions/src/domain/levels.js. A class (level+sublevel) may run more
+// than one parallel section. Base is the default and has NO suffix on the
+// weekly_lessons doc id; a non-base section appends `_<section>`. Absent/null/''
+// all mean base. Section names must NOT contain '_' (the doc id is parsed
+// positionally elsewhere).
+const ALLOWED_SECTIONS = ["bis", "ter"];
+
+// '' for base (absent/null/empty), otherwise the trimmed lowercase key.
+function normalizeSection(section) {
+  if (section === undefined || section === null) return "";
+  return String(section).trim().toLowerCase();
+}
+
+function isValidSection(section) {
+  const s = normalizeSection(section);
+  return s === "" || ALLOWED_SECTIONS.includes(s);
+}
+
+// Canonical weekly_lessons doc id. Base: `a1_s5`. Section: `a1_s5_bis`.
+function weeklyLessonId(levelKey, sublevelKey, section) {
+  const s = normalizeSection(section);
+  const base = `${levelKey}_${sublevelKey}`;
+  return s ? `${base}_${s}` : base;
+}
+
 // ---------- Time helpers (Absolute Neutral Logic) ----------
 function getNormalizedToday(tz = TZ) {
   const parts = new Intl.DateTimeFormat("en-GB", {
@@ -161,7 +187,7 @@ function programStartMondayFromArrivalYmd(arrivalYmd) {
     const usersSnap = await db.collection("users").get();
     console.log(`👥 Users fetched: ${usersSnap.size}`);
 
-    const grouped = new Map(); // key -> Set<uid>
+    const grouped = new Map(); // key -> { levelKey, sublevelKey, section, sublevelNumber, uids: Set<uid> }
     let activeUserCount = 0;
 
     let skippedInactiveNoArrivalInfo = 0;
@@ -205,30 +231,46 @@ function programStartMondayFromArrivalYmd(arrivalYmd) {
       if (weeksSinceStart < 0) continue;
       if (weeksSinceStart >= totalWeeks) continue;
 
-      const key = `${levelKey}_${subKey}`;
-      if (!grouped.has(key)) grouped.set(key, new Set());
-      grouped.get(key).add(userId);
-      activeUserCount++;
+      // Section: absent/null/'' => base. Coerce an unknown value to base and
+      // warn — never abort the whole run for one bad field.
+      let section = normalizeSection(basic.assessedSection);
+      if (!isValidSection(section)) {
+        console.warn(`[fillCurrentWeekRoster] user=${userId} invalid assessedSection=${section}; treating as base`);
+        section = "";
+      }
 
-      void sublevelNumber;
+      // Group by (level, sublevel, section). Store the parsed identity so we
+      // never re-parse the doc id later (a 3-part id like a1_s5_bis breaks split('_')).
+      const key = weeklyLessonId(levelKey, subKey, section);
+      if (!grouped.has(key)) {
+        grouped.set(key, {
+          levelKey,
+          sublevelKey: subKey,
+          section,
+          sublevelNumber,
+          uids: new Set(),
+        });
+      }
+      grouped.get(key).uids.add(userId);
+      activeUserCount++;
     }
 
     console.log(`🚫 Skipped inactive (missing arrivalInfo): ${skippedInactiveNoArrivalInfo}`);
     console.log(`🚫 Skipped inactive (missing assessedLevel/assessedSublevel): ${skippedInactiveNoAssessment}`);
 
     console.log(`✨ Active students (in-week): ${activeUserCount}`);
-    console.log(`📊 Active students grouped by level/sublevel:`);
-    for (const [key, uids] of grouped.entries()) {
-      console.log(`   ${key}: ${uids.size} students`);
+    console.log(`📊 Active students grouped by level/sublevel/section:`);
+    for (const [key, group] of grouped.entries()) {
+      console.log(`   ${key}: ${group.uids.size} students`);
     }
 
     // ---- Ensure weekly_lessons docs exist + are consistent (STRICT) ----
-    for (const key of grouped.keys()) {
-      const [levelKey, sublevelKey] = key.split("_");
-      expect(!!levelKey && !!sublevelKey, `[fillCurrentWeekRoster] Invalid lesson key=${key}`);
+    for (const [key, group] of grouped.entries()) {
+      const { levelKey, sublevelKey, section, sublevelNumber } = group;
 
+      // Defensive re-validation. `section` was already coerced to valid/base.
       assertValidLevel(levelKey, "weekly_lessons");
-      const sublevelNumber = assertValidSublevelForLevel(levelKey, sublevelKey, "weekly_lessons");
+      assertValidSublevelForLevel(levelKey, sublevelKey, "weekly_lessons");
       const levelOrder = getLevelOrderStrict(levelKey);
 
       const lessonRef = db.collection("weekly_lessons").doc(key);
@@ -236,11 +278,12 @@ function programStartMondayFromArrivalYmd(arrivalYmd) {
       if (DRY_RUN) {
         const snap = await lessonRef.get();
         if (!snap.exists) {
-          console.log(`→ (dry-run) would CREATE weekly_lessons/${key}`);
+          console.log(`→ (dry-run) would CREATE weekly_lessons/${key} (section=${section || "base"})`);
         } else {
           const data = snap.data() || {};
           expect(data.levelKey === levelKey, `[fillCurrentWeekRoster] weekly_lessons/${key} levelKey mismatch (${data.levelKey} != ${levelKey})`);
           expect(data.sublevelKey === sublevelKey, `[fillCurrentWeekRoster] weekly_lessons/${key} sublevelKey mismatch (${data.sublevelKey} != ${sublevelKey})`);
+          expect((data.section || "") === section, `[fillCurrentWeekRoster] weekly_lessons/${key} section mismatch (${data.section} != ${section})`);
           expect(data.levelOrder === levelOrder, `[fillCurrentWeekRoster] weekly_lessons/${key} levelOrder mismatch (${data.levelOrder} != ${levelOrder})`);
           expect(data.sublevelNumber === sublevelNumber, `[fillCurrentWeekRoster] weekly_lessons/${key} sublevelNumber mismatch (${data.sublevelNumber} != ${sublevelNumber})`);
           console.log(`→ (dry-run) would UPDATE weekly_lessons/${key} (updatedAt)`);
@@ -256,6 +299,7 @@ function programStartMondayFromArrivalYmd(arrivalYmd) {
           tx.set(lessonRef, {
             levelKey,
             sublevelKey,
+            section: section || null,
             levelOrder,
             sublevelNumber,
             createdAt: FieldValue.serverTimestamp(),
@@ -267,6 +311,8 @@ function programStartMondayFromArrivalYmd(arrivalYmd) {
         const data = snap.data() || {};
         expect(data.levelKey === levelKey, `[fillCurrentWeekRoster] weekly_lessons/${key} levelKey mismatch (${data.levelKey} != ${levelKey})`);
         expect(data.sublevelKey === sublevelKey, `[fillCurrentWeekRoster] weekly_lessons/${key} sublevelKey mismatch (${data.sublevelKey} != ${sublevelKey})`);
+        // Treat absent/null/'' identically as base.
+        expect((data.section || "") === section, `[fillCurrentWeekRoster] weekly_lessons/${key} section mismatch (${data.section} != ${section})`);
         expect(data.levelOrder === levelOrder, `[fillCurrentWeekRoster] weekly_lessons/${key} levelOrder mismatch (${data.levelOrder} != ${levelOrder})`);
         expect(
           data.sublevelNumber === sublevelNumber,
@@ -280,8 +326,8 @@ function programStartMondayFromArrivalYmd(arrivalYmd) {
     // ---- Update current week roster ----
     let writes = 0;
 
-    for (const [key, uids] of grouped.entries()) {
-      const roster = Array.from(uids).sort();
+    for (const [key, group] of grouped.entries()) {
+      const roster = Array.from(group.uids).sort();
       const lessonRef = db.collection("weekly_lessons").doc(key);
       const weekRef = lessonRef.collection("attendance").doc(weekMondayYmd);
 
