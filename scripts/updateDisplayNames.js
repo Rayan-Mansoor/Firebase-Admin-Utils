@@ -1,9 +1,14 @@
 // scripts/updateDisplayNames.js
 const { auth, db } = require("../firebaseAdmin");
 
+const CONFIG = {
+  DRY_RUN: false, // true => preview which display names would change; no Auth writes
+};
+
 async function updateDisplayNames() {
   try {
     console.log("🚀 Starting display name update for all users...");
+    if (CONFIG.DRY_RUN) console.log("🧪 DRY_RUN is ON — no writes will be performed.");
     
     let processedCount = 0;
     let updatedCount = 0;
@@ -44,8 +49,12 @@ async function updateDisplayNames() {
             skippedCount++;
           } else {
             const previousDisplayName = currentUser.displayName || "null";
-            await auth.updateUser(uid, { displayName: fullName });
-            console.log(`✅ Updated ${uid} → "${fullName}" (was: "${previousDisplayName}")`);
+            if (CONFIG.DRY_RUN) {
+              console.log(`→ (dry-run) would update ${uid} → "${fullName}" (was: "${previousDisplayName}")`);
+            } else {
+              await auth.updateUser(uid, { displayName: fullName });
+              console.log(`✅ Updated ${uid} → "${fullName}" (was: "${previousDisplayName}")`);
+            }
             updatedCount++;
           }
         } else {
@@ -74,7 +83,7 @@ async function updateDisplayNames() {
     console.log(`   Errors: ${errorCount}`);
     
     if (updatedCount > 0) {
-      console.log("🎉 Display name update completed successfully!");
+      console.log(CONFIG.DRY_RUN ? "🧪 DRY RUN complete — no changes written." : "🎉 Display name update completed successfully!");
     } else {
       console.log("ℹ️  No updates needed - all display names are already up to date!");
     }

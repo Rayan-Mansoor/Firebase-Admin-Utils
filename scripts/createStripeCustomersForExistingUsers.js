@@ -1,4 +1,9 @@
 const { auth, db } = require("../firebaseAdmin");
+
+const CONFIG = {
+  DRY_RUN: false, // true => preview which users would get a Stripe customer; no Stripe calls or Firestore writes
+};
+
 const STRIPE_API_KEY = process.env.STRIPE_API_KEY;
 if (!STRIPE_API_KEY) {
   throw new Error("Set STRIPE_API_KEY in your .env before running this script.");
@@ -8,6 +13,7 @@ const stripe = require("stripe")(STRIPE_API_KEY);
 async function createStripeCustomersForExistingUsers() {
   try {
     console.log("🚀 Starting Stripe customer creation for existing users...");
+    if (CONFIG.DRY_RUN) console.log("🧪 DRY_RUN is ON — no Stripe calls or Firestore writes will be performed.");
     
     let processedCount = 0;
     let createdCount = 0;
@@ -35,6 +41,12 @@ async function createStripeCustomersForExistingUsers() {
           if (!userRecord.email) {
             console.log(`⚠️  Skipped ${userRecord.uid} - no email address`);
             skippedCount++;
+            continue;
+          }
+
+          if (CONFIG.DRY_RUN) {
+            console.log(`→ (dry-run) would create Stripe customer for ${userRecord.uid} (${userRecord.email})`);
+            createdCount++;
             continue;
           }
 
@@ -84,7 +96,7 @@ async function createStripeCustomersForExistingUsers() {
     console.log(`   Created: ${createdCount}`);
     console.log(`   Skipped: ${skippedCount}`);
     console.log(`   Errors: ${errorCount}`);
-    console.log("🎉 Migration completed!");
+    console.log(CONFIG.DRY_RUN ? "🧪 DRY RUN complete — no Stripe customers created, no writes." : "🎉 Migration completed!");
 
   } catch (error) {
     console.error("💥 Fatal error during migration:", error);

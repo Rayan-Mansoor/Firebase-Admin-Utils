@@ -3,6 +3,9 @@ const { db, FieldValue } = require("../firebaseAdmin");
 
 const TZ = "Europe/Rome";
 
+// Set DRY_RUN = true to preview lesson/roster writes without committing anything.
+const DRY_RUN = false;
+
 // ---------- Sublevel Configuration ----------
 const SUBLEVEL_LIMITS = {
   absoluteBeginner: 0, // no sublevels
@@ -147,6 +150,7 @@ function programStartMondayFromArrivalYmd(arrivalYmd) {
 (async () => {
   try {
     assertTz(TZ);
+    if (DRY_RUN) console.log("🧪 DRY_RUN is ON — no writes will be performed.\n");
 
     const todayNormalized = getNormalizedToday(TZ);
     const weekMonday = mondayOfIsoWeek(todayNormalized);
@@ -229,6 +233,21 @@ function programStartMondayFromArrivalYmd(arrivalYmd) {
 
       const lessonRef = db.collection("weekly_lessons").doc(key);
 
+      if (DRY_RUN) {
+        const snap = await lessonRef.get();
+        if (!snap.exists) {
+          console.log(`→ (dry-run) would CREATE weekly_lessons/${key}`);
+        } else {
+          const data = snap.data() || {};
+          expect(data.levelKey === levelKey, `[fillCurrentWeekRoster] weekly_lessons/${key} levelKey mismatch (${data.levelKey} != ${levelKey})`);
+          expect(data.sublevelKey === sublevelKey, `[fillCurrentWeekRoster] weekly_lessons/${key} sublevelKey mismatch (${data.sublevelKey} != ${sublevelKey})`);
+          expect(data.levelOrder === levelOrder, `[fillCurrentWeekRoster] weekly_lessons/${key} levelOrder mismatch (${data.levelOrder} != ${levelOrder})`);
+          expect(data.sublevelNumber === sublevelNumber, `[fillCurrentWeekRoster] weekly_lessons/${key} sublevelNumber mismatch (${data.sublevelNumber} != ${sublevelNumber})`);
+          console.log(`→ (dry-run) would UPDATE weekly_lessons/${key} (updatedAt)`);
+        }
+        continue;
+      }
+
       await db.runTransaction(async (tx) => {
         const snap = await tx.get(lessonRef);
 
@@ -266,6 +285,13 @@ function programStartMondayFromArrivalYmd(arrivalYmd) {
       const lessonRef = db.collection("weekly_lessons").doc(key);
       const weekRef = lessonRef.collection("attendance").doc(weekMondayYmd);
 
+      if (DRY_RUN) {
+        const snap = await weekRef.get();
+        console.log(`→ (dry-run) would ${snap.exists ? "UPDATE" : "CREATE"}: ${key}/attendance/${weekMondayYmd} (roster=${roster.length})`);
+        writes += 1;
+        continue;
+      }
+
       await db.runTransaction(async (tx) => {
         const snap = await tx.get(weekRef);
 
@@ -288,7 +314,11 @@ function programStartMondayFromArrivalYmd(arrivalYmd) {
       console.log(`✅ Updated: ${key} (roster=${roster.length})`);
     }
 
-    console.log(`🎉 Completed. Wrote ${writes} rosters for week ${weekMondayYmd}.`);
+    console.log(
+      DRY_RUN
+        ? `🧪 DRY RUN complete. Would write ${writes} rosters for week ${weekMondayYmd}.`
+        : `🎉 Completed. Wrote ${writes} rosters for week ${weekMondayYmd}.`
+    );
   } catch (e) {
     console.error("❌ Error:", e?.stack || e?.message || String(e));
     process.exit(1);

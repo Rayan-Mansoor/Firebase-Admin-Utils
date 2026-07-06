@@ -9,12 +9,13 @@ const CONFIG = {
   CALLER_UID: "4B5NBgQQUfSgVwLMtbL2GhBeNl33",           // uid of the owner performing this action
   ALLOW_SELF_DEMOTE: false,            // prevent owner from revoking their own admin
   SKIP_OWNER_CHECK: false,             // set true only for first-time bootstrap
+  DRY_RUN: false,                      // true => preview only; no claims/Firestore writes
 };
 
 async function setAdminStatus() {
   console.log("🚀 Starting setAdminStatus...");
 
-  const { TARGET_EMAIL, MAKE_ADMIN, CALLER_UID, ALLOW_SELF_DEMOTE, SKIP_OWNER_CHECK } = CONFIG;
+  const { TARGET_EMAIL, MAKE_ADMIN, CALLER_UID, ALLOW_SELF_DEMOTE, SKIP_OWNER_CHECK, DRY_RUN } = CONFIG;
 
   try {
     // --- Input validation (keep it simple & explicit) ---
@@ -56,6 +57,15 @@ async function setAdminStatus() {
 
     // Merge custom claims (preserve unrelated claims like 'owner')
     const newClaims = { ...currentClaims, admin: MAKE_ADMIN };
+
+    if (DRY_RUN) {
+      console.log("🧪 DRY_RUN is ON — no writes will be performed.");
+      console.log(`→ (dry-run) would set custom claims for ${targetUid}: admin=${MAKE_ADMIN}`);
+      console.log(`→ (dry-run) would ${MAKE_ADMIN ? `upsert admins/${targetUid}` : `delete admins/${targetUid}`}`);
+      console.log("✅ DRY RUN complete.");
+      return;
+    }
+
     await auth.setCustomUserClaims(targetUid, newClaims);
     console.log(`✔️  Updated custom claims for ${targetUid}: admin=${MAKE_ADMIN}`);
 
