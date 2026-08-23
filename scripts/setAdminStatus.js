@@ -6,16 +6,16 @@ const { auth, db, admin } = require("../firebaseAdmin");
 const CONFIG = {
   TARGET_EMAIL: "rayanmansoor45@gmail.com", // <-- change this
   MAKE_ADMIN: false,                    // true => grant, false => revoke
-  CALLER_UID: "4B5NBgQQUfSgVwLMtbL2GhBeNl33",           // uid of the owner performing this action
-  ALLOW_SELF_DEMOTE: false,            // prevent owner from revoking their own admin
-  SKIP_OWNER_CHECK: false,             // set true only for first-time bootstrap
+  CALLER_UID: "4B5NBgQQUfSgVwLMtbL2GhBeNl33",           // uid of the admin performing this action
+  ALLOW_SELF_DEMOTE: false,            // prevent an admin from revoking their own access
+  SKIP_CALLER_CHECK: false,            // set true only for first-time bootstrap
   DRY_RUN: false,                      // true => preview only; no claims/Firestore writes
 };
 
 async function setAdminStatus() {
   console.log("🚀 Starting setAdminStatus...");
 
-  const { TARGET_EMAIL, MAKE_ADMIN, CALLER_UID, ALLOW_SELF_DEMOTE, SKIP_OWNER_CHECK, DRY_RUN } = CONFIG;
+  const { TARGET_EMAIL, MAKE_ADMIN, CALLER_UID, ALLOW_SELF_DEMOTE, SKIP_CALLER_CHECK, DRY_RUN } = CONFIG;
 
   try {
     // --- Input validation (keep it simple & explicit) ---
@@ -26,9 +26,9 @@ async function setAdminStatus() {
       throw new Error("MAKE_ADMIN must be a boolean (true|false).");
     }
 
-    // --- Owner authorization (mirrors your CF logic, but simple) ---
-    if (!SKIP_OWNER_CHECK) {
-      if (!CALLER_UID) throw new Error("CALLER_UID is required for owner check.");
+    // --- Caller authorization (mirrors requireAdmin in the CF guards) ---
+    if (!SKIP_CALLER_CHECK) {
+      if (!CALLER_UID) throw new Error("CALLER_UID is required for the caller check.");
       let caller;
       try {
         caller = await auth.getUser(CALLER_UID);
@@ -39,8 +39,8 @@ async function setAdminStatus() {
         throw new Error(`Failed to fetch caller: ${e.message}`);
       }
       const claims = caller.customClaims || {};
-      if (claims.owner !== true) {
-        throw new Error("Action requires owner privileges (custom claim owner=true).");
+      if (claims.admin !== true) {
+        throw new Error("Action requires admin privileges (custom claim admin=true).");
       }
     }
 
@@ -49,13 +49,14 @@ async function setAdminStatus() {
     const targetUid = userRecord.uid;
     const currentClaims = userRecord.customClaims || {};
 
-    // Prevent owner self-demotion unless explicitly allowed
-    if (!ALLOW_SELF_DEMOTE && currentClaims.owner && !MAKE_ADMIN && targetUid === CALLER_UID) {
-      console.log("⛔ Owner self-demotion is blocked by ALLOW_SELF_DEMOTE=false. Aborting.");
+    // Prevent self-demotion unless explicitly allowed: revoking your own
+    // admin claim locks you out of the panel, and of this script.
+    if (!ALLOW_SELF_DEMOTE && currentClaims.admin && !MAKE_ADMIN && targetUid === CALLER_UID) {
+      console.log("⛔ Self-demotion is blocked by ALLOW_SELF_DEMOTE=false. Aborting.");
       return;
     }
 
-    // Merge custom claims (preserve unrelated claims like 'owner')
+    // `admin` is the whole account type; there are no other claims to keep.
     const newClaims = { ...currentClaims, admin: MAKE_ADMIN };
 
     if (DRY_RUN) {
