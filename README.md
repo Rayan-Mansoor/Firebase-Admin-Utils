@@ -225,3 +225,11 @@ anything is written.
 ```bash
 node scripts/firestore/importCollection.js data/products.csv
 ```
+
+#### `exploreCollection.js`: print documents as JSON
+
+Prints the documents of a collection or subcollection as JSON, to read them or
+redirect into a file: with `WHERE` filters, chosen `DOC_IDS`, a `SAMPLE_LIMIT`,
+subcollections embedded under `_subcollections` (`INCLUDE_SUBCOLLECTIONS`), or
+one subcollection gathered across every parent (`SUBCOLLECTION_TARGET`). It only
+reads.
