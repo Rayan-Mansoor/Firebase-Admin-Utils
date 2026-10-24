@@ -114,7 +114,7 @@ node scripts/firestore/restoreFirestore.js backups/firestore-<project>-<time>.nd
 #### `alterFields.js`: change field values
 
 Applies value rules, in order, to every chosen document: `set`, `copy`,
-`increment`, `replace` (regex, strings only), `coerce` (to string, number, int
+`move` (rename a field), `increment`, `replace` (regex, strings only), `coerce` (to string, number, int
 or boolean) and `serverTimestamp`. Each rule can be limited with `onlyIf`
 (`exists`, `missing`, or `equals` a value). `ARRAY_ALTERS` applies the same
 rules to the objects inside an array field. A rule that would leave a value as
@@ -124,5 +124,6 @@ it is writes nothing, so running it twice is harmless.
 ALTERS: [
   { op: "set", path: "status", value: "active", onlyIf: "missing" },
   { op: "coerce", path: "age", type: "int" },
+  { op: "move", from: "first_name", to: "firstName" },
 ],
 ```

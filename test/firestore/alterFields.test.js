@@ -69,3 +69,22 @@ test("coerceValue", () => {
   assert.equal(coerceValue(-3.7, "int"), -3);
   assert.equal(coerceValue(undefined, "string", "d"), "d");
 });
+
+test("move renames a field in one update: the new path set, the old deleted", () => {
+  const c = cfg([{ op: "move", from: "first_name", to: "name.first" }]);
+  const { update, changes } = planDoc({ first_name: "Ada" }, c);
+  assert.deepEqual(Object.keys(update), ["name.first", "first_name"]);
+  assert.equal(update["name.first"], "Ada");
+  assert.equal(update.first_name.methodName, "FieldValue.delete");
+  assert.deepEqual(changes, ["move first_name → name.first"]);
+  assert.deepEqual(planDoc({ name: { first: "Ada" } }, c).update, {}); // already moved
+});
+
+test("move inside array items renames the key in each item", () => {
+  const c = cfg([], [{ arrayPath: "slots", alters: [{ op: "move", from: "t", to: "teacher" }] }]);
+  assert.deepEqual(planDoc({ slots: [{ t: "A" }, { x: 1 }] }, c).update, { slots: [{ teacher: "A" }, { x: 1 }] });
+});
+
+test("move refuses paths nested in each other", () => {
+  assert.throws(() => validateConfig(cfg([{ op: "move", from: "a", to: "a.b" }])), /nest/);
+});

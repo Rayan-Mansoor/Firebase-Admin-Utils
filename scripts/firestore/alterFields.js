@@ -1,5 +1,5 @@
 // scripts/firestore/alterFields.js
-// Change field VALUES across a collection (or every collection with an id).
+// Change field values, or rename fields, across a collection (or every collection with an id).
 // To delete fields, use scrubFields.js.
 //
 // What it writes: an update per document whose values actually change; a rule
@@ -15,7 +15,7 @@
 
 const { FieldValue } = require("firebase-admin").firestore;
 const { validateTarget, describeTarget, targetDocs } = require("../../lib/targets");
-const { getByPath, setByPath, pathsOverlap, sameValue } = require("../../lib/fieldPaths");
+const { getByPath, setByPath, unsetByPath, pathsOverlap, sameValue } = require("../../lib/fieldPaths");
 const { saveBeforeState } = require("../../lib/beforeState");
 const { applyWrites, printFailures } = require("../../lib/writes");
 const { banner, preview, runMain } = require("../../lib/run");
@@ -27,6 +27,7 @@ const { banner, preview, runMain } = require("../../lib/run");
  * - ALTERS: value operations, applied in order to each document
  *     - { op: "set", path, value, onlyIf?, equalsValue? }
  *     - { op: "copy", from, to, onlyIf?, equalsValue? }        copies; "from" stays
+ *     - { op: "move", from, to, onlyIf?, equalsValue? }        renames: "to" gets the value, "from" is deleted
  *     - { op: "increment", path, by, defaultIfMissing? }
  *     - { op: "replace", path, pattern, flags?: "g", replace }  strings only
  *     - { op: "coerce", path, type: "string"|"number"|"int"|"boolean", defaultValue? }
@@ -51,6 +52,7 @@ const CONFIG = {
   ALTERS: [
     // { op: "set", path: "status", value: "active", onlyIf: "missing" },
     // { op: "copy", from: "profile.fullName", to: "profile.displayName" },
+    // { op: "move", from: "first_name", to: "firstName" },
     // { op: "increment", path: "stats.loginCount", by: 1, defaultIfMissing: 0 },
     // { op: "replace", path: "profile.fullName", pattern: "\\s+", flags: "g", replace: " " },
     // { op: "coerce", path: "age", type: "int", defaultValue: null },
@@ -69,7 +71,7 @@ const CONFIG = {
   LOG_SAMPLES: 10,
 };
 
-const OPS = ["set", "copy", "increment", "replace", "coerce", "serverTimestamp"];
+const OPS = ["set", "copy", "move", "increment", "replace", "coerce", "serverTimestamp"];
 const ONLY_IF = ["always", "exists", "missing", "equals"];
 
 // ------------------------- validation -------------------------
@@ -98,9 +100,10 @@ function validateRule(rule, where) {
   const str = (k) => {
     if (typeof rule[k] !== "string" || !rule[k]) throw new Error(`${where}: ${rule.op} requires "${k}" (string).`);
   };
-  if (rule.op === "copy") {
+  if (rule.op === "copy" || rule.op === "move") {
     str("from");
     str("to");
+    if (rule.op === "move" && pathsOverlap(rule.from, rule.to)) throw new Error(`${where}: move can't nest "${rule.from}" and "${rule.to}" inside each other.`);
   } else {
     str("path");
   }
@@ -184,6 +187,14 @@ function ruleEffects(rule, data) {
       const val = getByPath(data, rule.from);
       return val === undefined ? [] : changed(rule.to, val);
     }
+    case "move": {
+      const val = getByPath(data, rule.from);
+      if (val === undefined) return [];
+      return [
+        { path: rule.to, value: val, change: `move ${rule.from} → ${rule.to}` },
+        { path: rule.from, value: FieldValue.delete(), remove: true },
+      ];
+    }
     case "increment": {
       const cur = getByPath(data, rule.path);
       if (cur === undefined && "defaultIfMissing" in rule) return changed(rule.path, rule.defaultIfMissing + rule.by);
@@ -214,8 +225,9 @@ function applyRules(rules, obj) {
   const changes = [];
   for (const rule of rules) {
     for (const e of ruleEffects(rule, next)) {
-      setByPath(next, e.path, e.value);
-      changes.push(e.change);
+      if (e.remove) unsetByPath(next, e.path);
+      else setByPath(next, e.path, e.value);
+      if (e.change) changes.push(e.change);
     }
   }
   return { next, changes };
@@ -238,8 +250,9 @@ function planDoc(data, cfg = CONFIG) {
   for (const rule of cfg.ALTERS) {
     for (const e of ruleEffects(rule, current)) {
       update[e.path] = e.value;
-      setByPath(current, e.path, e.value);
-      changes.push(e.change);
+      if (e.remove) unsetByPath(current, e.path);
+      else setByPath(current, e.path, e.value);
+      if (e.change) changes.push(e.change);
     }
   }
   for (const ar of cfg.ARRAY_ALTERS) {
