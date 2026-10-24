@@ -196,3 +196,18 @@ Firestore records when every document was created and last written. This copies
 those times into `createdAt` / `updatedAt` (names configurable, either can be
 off) wherever the field is missing, as a Timestamp, an ISO string or epoch
 milliseconds. Fields already set are never touched.
+
+#### `linkByLabel.js`: turn stored names into links
+
+For each document, finds the one document in `LOOKUP_COLLECTION` whose label
+(`LOOKUP_LABEL_FIELDS`) matches its `LABEL_FIELD`, ignoring accents, spacing and
+case, and writes its id, path or a reference into `ID_FIELD`. Works on a
+top-level field or on each object of an array field (`ARRAY_PATH`). A name
+matching several documents is reported, never guessed; one matching none is
+reported with near misses.
+
+```js
+COLLECTION: "lessons", ARRAY_PATH: "slots",
+LABEL_FIELD: "teacherName", ID_FIELD: "teacherId",
+LOOKUP_COLLECTION: "teachers", LOOKUP_LABEL_FIELDS: ["displayName"],
+```
