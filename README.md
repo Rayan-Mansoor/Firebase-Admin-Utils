@@ -371,3 +371,13 @@ not touched.
 ```js
 FILTER: { ANONYMOUS: true, INACTIVE_DAYS: 30 },
 ```
+
+#### `disableUsers.js`: block or unblock sign-in
+
+Disables accounts so they can't sign in (keeping them and their data), or with
+`DISABLE: false` enables them again. When disabling, `REVOKE_SESSIONS` (on by
+default) also revokes the sessions they hold.
+
+```js
+EMAILS: ["leaver@example.com"], DISABLE: true,
+```
