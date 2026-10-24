@@ -314,3 +314,18 @@ documents counted). It only reads.
 ```js
 TARGETS: [{ COLLECTION: "users", WHERE: [["disabled", "==", true]] }],
 ```
+
+### Auth
+
+The Auth scripts name users with `USER_IDS` and/or `EMAILS`; the dry run lists
+who was found and who wasn't.
+
+#### `resetUserPassword.js`: set a temporary password
+
+Gives users a temporary password to hand out. `REVOKE_SESSIONS` also signs them
+out on every device. `FIRESTORE_FIELD` (`{ collection, field }`) also stores the
+password on each user's document, for apps that show it or ask for a change.
+
+```js
+EMAILS: ["someone@example.com"], TEMP_PASSWORD: "change-me-123",
+```
