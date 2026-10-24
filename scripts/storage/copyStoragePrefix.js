@@ -1,13 +1,18 @@
 // scripts/storage/copyStoragePrefix.js
-// Copy every Cloud Storage object under one folder (prefix) to another, keeping
-// the paths below it: "avatars/u1/a.png" under "avatars/" lands at "profile-images/u1/a.png".
+// Copy, or move, every Cloud Storage object under one folder (prefix) to another,
+// keeping the paths below it: "avatars/u1/a.png" under "avatars/" lands at
+// "profile-images/u1/a.png".
 //
 // What it writes: a copy of each object, metadata included. A destination object
 // that already exists is skipped unless OVERWRITE_EXISTING is on, since Storage
 // keeps no copy of what an overwrite replaces (unless the bucket has versioning).
 //
+// With DELETE_SOURCE it is a move: each original is deleted once its own copy has
+// landed; one that was skipped or failed stays.
+//
 // Why it's safe: the dry run (the default) lists the copies and the existing
-// objects that would be skipped or overwritten. Originals are never touched.
+// objects that would be skipped or overwritten. Without DELETE_SOURCE, originals
+// are never touched.
 //
 // Usage: set CONFIG below, run `node scripts/storage/copyStoragePrefix.js`, read
 // the plan, then set DRY_RUN = false and run it again.
@@ -20,6 +25,7 @@ const { banner, runMain } = require("../../lib/run");
  * - FROM_PREFIX: the folder to copy from ("avatars/")
  * - TO_PREFIX: the folder to copy to ("profile-images/")
  * - OVERWRITE_EXISTING: replace destination objects that already exist (they can't be recovered)
+ * - DELETE_SOURCE: move instead of copy: delete each original after its copy lands
  * - DRY_RUN: list without copying
  * - LOG_SAMPLES: how many copies to print
  */
@@ -27,6 +33,7 @@ const CONFIG = {
   FROM_PREFIX: "uploads/",
   TO_PREFIX: "uploads-copy/",
   OVERWRITE_EXISTING: false,
+  DELETE_SOURCE: false,
   DRY_RUN: true,
   LOG_SAMPLES: 25,
 };
@@ -38,7 +45,7 @@ function validateConfig(cfg = CONFIG) {
   const to = normalizePrefix(cfg.TO_PREFIX);
   if (from === to) throw new Error("FROM_PREFIX and TO_PREFIX must differ.");
   if (to.startsWith(from) || from.startsWith(to)) throw new Error("FROM_PREFIX and TO_PREFIX can't be nested in each other.");
-  for (const k of ["OVERWRITE_EXISTING", "DRY_RUN"]) {
+  for (const k of ["OVERWRITE_EXISTING", "DELETE_SOURCE", "DRY_RUN"]) {
     if (typeof cfg[k] !== "boolean") throw new Error(`CONFIG.${k} must be boolean.`);
   }
 }
@@ -70,7 +77,7 @@ async function planCopies(bucket, cfg) {
 async function main() {
   const { bucket } = require("../../firebaseAdmin");
   validateConfig();
-  console.log(`🚀 Copy gs://${bucket.name}/${normalizePrefix(CONFIG.FROM_PREFIX)} → ${normalizePrefix(CONFIG.TO_PREFIX)}`);
+  console.log(`🚀 ${CONFIG.DELETE_SOURCE ? "Move" : "Copy"} gs://${bucket.name}/${normalizePrefix(CONFIG.FROM_PREFIX)} → ${normalizePrefix(CONFIG.TO_PREFIX)}`);
   banner(CONFIG.DRY_RUN);
 
   const { copies, existing, sourceCount } = await planCopies(bucket, CONFIG);
@@ -89,16 +96,28 @@ async function main() {
     return;
   }
 
-  let done = 0;
+  const landed = [];
   for (const c of copies) {
     try {
       await bucket.file(c.from).copy(bucket.file(c.to));
-      done++;
+      landed.push(c);
     } catch (err) {
       console.error(`   ❌ ${c.from}: ${err.message}`);
     }
   }
-  console.log(`\n✅ Copied ${done} of ${copies.length} objects.`);
+  console.log(`\n✅ Copied ${landed.length} of ${copies.length} objects.`);
+  if (!CONFIG.DELETE_SOURCE) return;
+  let deleted = 0;
+  for (const c of landed) {
+    try {
+      await bucket.file(c.from).delete();
+      deleted++;
+    } catch (err) {
+      console.error(`   ❌ couldn't delete ${c.from}: ${err.message}`);
+    }
+  }
+  const kept = copies.length - landed.length + (CONFIG.OVERWRITE_EXISTING ? 0 : existing.length);
+  console.log(`🗑️  Deleted ${deleted} originals${kept ? `; ${kept} not copied stay` : ""}.`);
 }
 
 if (require.main === module) runMain(main);

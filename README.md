@@ -394,3 +394,6 @@ replaces). Originals are never touched.
 ```js
 FROM_PREFIX: "avatars/", TO_PREFIX: "profile-images/",
 ```
+
+`DELETE_SOURCE` makes it a move: each original is deleted once its own copy has
+landed; any that were skipped or failed stay.

@@ -32,3 +32,8 @@ test("same, nested or slash-led prefixes are refused", () => {
   assert.throws(() => validateConfig(cfg({ TO_PREFIX: "a/inner" })), /nested/);
   assert.throws(() => validateConfig(cfg({ FROM_PREFIX: "/a" })), /leading slash/);
 });
+
+test("DELETE_SOURCE is a boolean like the other switches", () => {
+  assert.doesNotThrow(() => validateConfig(cfg({ DELETE_SOURCE: true })));
+  assert.throws(() => validateConfig(cfg({ DELETE_SOURCE: "yes" })), /DELETE_SOURCE must be boolean/);
+});
