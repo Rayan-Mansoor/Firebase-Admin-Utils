@@ -304,3 +304,13 @@ REFERENCES: [
   { field: "productId", collection: "products", arrayPath: "lines" },
 ],
 ```
+
+#### `countDocuments.js`: count without reading
+
+Counts every root collection, or the collections, collection groups and filtered
+queries you list, with Firestore's count aggregation (one read per 1,000
+documents counted). It only reads.
+
+```js
+TARGETS: [{ COLLECTION: "users", WHERE: [["disabled", "==", true]] }],
+```
