@@ -189,3 +189,10 @@ once; the script prints the `gcloud` command that turns the policy on.
 COLLECTION: "notifications", USE_COLLECTION_GROUP: true,
 SOURCE_FIELD: "createdAt", EXPIRY_FIELD: "expiresAt", TTL_DAYS: 90,
 ```
+
+#### `backfillTimestamps.js`: fill in missing created / updated times
+
+Firestore records when every document was created and last written. This copies
+those times into `createdAt` / `updatedAt` (names configurable, either can be
+off) wherever the field is missing, as a Timestamp, an ISO string or epoch
+milliseconds. Fields already set are never touched.
