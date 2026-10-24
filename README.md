@@ -341,3 +341,14 @@ set value. The Auth records it changes are saved first.
 COLLECTION: "users",
 MAPPING: { displayName: ["profile.firstName", "profile.lastName"], photoURL: "avatarUrl" },
 ```
+
+#### `setCustomClaims.js`: set roles and flags in ID tokens
+
+Merges `SET` into users' custom claims, removes the names in `REMOVE`, or with
+`REPLACE_ALL` makes the claims exactly `SET`. Firebase's limits (reserved
+names, 1,000 bytes) are checked first. Claims reach a user's token at its next
+refresh; `REVOKE_SESSIONS` makes them apply at the next sign-in.
+
+```js
+EMAILS: ["editor@example.com"], SET: { role: "editor" },
+```
