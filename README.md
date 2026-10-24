@@ -481,3 +481,6 @@ sibling repositories, so they won't run elsewhere as they are.
   master flag in the ALCE platform.
 - `projects/alce/checkPermissionsDrift.js`: checks that the ALCE permission keys
   agree across its functions, security rules, admin panel and stored access.
+
+`projects/<name>/one-off/` is for scripts that run once (a migration, a data
+fix). Git ignores everything in it, so they stay on the author's machine.

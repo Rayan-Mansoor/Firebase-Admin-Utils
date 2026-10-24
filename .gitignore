@@ -21,3 +21,7 @@ Thumbs.db
 
 # History
 .history/
+
+# One-off scripts: run once, kept locally, never committed
+projects/*/one-off/*
+!projects/*/one-off/.gitkeep
