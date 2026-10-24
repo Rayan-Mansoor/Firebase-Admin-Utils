@@ -352,3 +352,10 @@ refresh; `REVOKE_SESSIONS` makes them apply at the next sign-in.
 ```js
 EMAILS: ["editor@example.com"], SET: { role: "editor" },
 ```
+
+#### `auditAuthUsers.js`: do accounts and user documents agree?
+
+Lists Auth accounts with no user document, user documents with no account, and
+with `EMAIL_FIELD` documents whose email isn't the account's. Anonymous accounts
+are left out unless `INCLUDE_ANONYMOUS` is on. `OUTPUT_FILE` saves the findings.
+It only reads.
