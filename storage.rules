@@ -1,0 +1,10 @@
+rules_version = '2';
+
+// For the Storage emulator only. The Admin SDK bypasses rules, so clients get nothing.
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

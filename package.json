@@ -1,0 +1,26 @@
+{
+  "name": "firebase-admin-utils",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Firebase Admin scripts for Firestore, Auth, Cloud Storage, Cloud Messaging and Stripe, each dry-run first with a restorable backup before it writes.",
+  "keywords": [
+    "firebase",
+    "firebase-admin",
+    "firestore",
+    "firebase-auth",
+    "cloud-storage",
+    "scripts"
+  ],
+  "license": "ISC",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "emulators": "firebase emulators:start --only firestore,auth,storage --project demo-firebase-admin-utils"
+  },
+  "dependencies": {
+    "dotenv": "^17.2.3",
+    "firebase-admin": "^13.4.0",
+    "stripe": "^18.5.0"
+  }
+}
