@@ -16,6 +16,7 @@
     "node": ">=22"
   },
   "scripts": {
+    "test": "node --test \"test/**/*.test.js\"",
     "emulators": "firebase emulators:start --only firestore,auth,storage --project demo-firebase-admin-utils"
   },
   "dependencies": {

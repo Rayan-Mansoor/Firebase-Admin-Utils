@@ -62,9 +62,26 @@ a dry run, then run it for real.
 | Path | What's there |
 |---|---|
 | `firebaseAdmin.js` | The shared Admin init. Exports `admin`, `db`, `auth`, `bucket`, `projectId`, `emulated`, `FieldValue`, `Timestamp`, `GeoPoint`. |
+| `lib/` | Code the scripts share: the backup format, guarded writes, paging. |
 | `scripts/<area>/` | The scripts, by area: `firestore`, `auth`, `storage`, `messaging`, `stripe`. |
+| `test/` | Tests of the scripts' decisions: `npm test`, no Firebase needed. |
 | `backups/` | Backups and before-write snapshots. Git ignores it. |
 
 ---
 
 ## Scripts
+
+### Firestore
+
+#### `backupFirestore.js`: back up the database to a file
+
+Backs up the whole database, or chosen collections, subcollections or document
+subtrees, into one NDJSON file under `backups/`. Subcollections at any depth
+are included, even under documents that were deleted, and every Firestore type
+(Timestamp, GeoPoint, reference, bytes, vector) survives exactly. It only reads.
+
+```bash
+node scripts/firestore/backupFirestore.js              # the whole database
+node scripts/firestore/backupFirestore.js users posts  # these collections
+node scripts/firestore/backupFirestore.js users/abc    # one doc and everything under it
+```
