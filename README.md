@@ -177,3 +177,15 @@ the backup.
 PATHS: ["legacy_users"],               // or:
 COLLECTION: "logs", WHERE: [["createdAt", "<", someTimestamp]],
 ```
+
+#### `backfillTtl.js`: give old documents a TTL expiry
+
+Writes `EXPIRY_FIELD = SOURCE_FIELD + TTL_DAYS` on documents that lack it, so a
+[TTL policy](https://firebase.google.com/docs/firestore/ttl) clears the backlog
+the same way it clears new documents. The dry run says how many would expire at
+once; the script prints the `gcloud` command that turns the policy on.
+
+```js
+COLLECTION: "notifications", USE_COLLECTION_GROUP: true,
+SOURCE_FIELD: "createdAt", EXPIRY_FIELD: "expiresAt", TTL_DAYS: 90,
+```
