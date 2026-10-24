@@ -411,3 +411,15 @@ the fields to catch broken bare paths. It only reads.
 PREFIXES: ["avatars/"],
 SOURCES: [{ COLLECTION: "users", FIELDS: ["avatarPath"] }],
 ```
+
+#### `setStorageCors.js`: let your web app fetch files
+
+Sets the bucket's CORS rules so browsers on your `ORIGINS` can fetch files
+directly, without installing gsutil. `MODE: "replace"` sets exactly this rule,
+`"add"` appends it, `"clear"` removes all rules. The current rules are saved
+first. (The Storage emulator has no bucket settings, so this needs a real
+bucket.)
+
+```js
+ORIGINS: ["https://myapp.com", "http://localhost:5173"], METHODS: ["GET", "HEAD"],
+```
