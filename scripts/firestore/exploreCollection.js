@@ -1,12 +1,15 @@
 // scripts/firestore/exploreCollection.js
-// Print the documents of a collection (or subcollection) as JSON, to look at them or
-// redirect them into a file. Supports targeting a subcollection across all parent docs,
+// Print the documents of a collection (or subcollection) as JSON or CSV, to look at
+// them or save them to a file. Supports targeting a subcollection across all parent docs,
 // recursive subcollection inclusion, WHERE filters, DOC_IDS targeting, and sampling.
 // It only reads.
 //
 // Usage: set CONFIG below and run: `node scripts/firestore/exploreCollection.js`
 
+const fs = require("fs");
+const path = require("path");
 const admin = require("firebase-admin");
+const { toCsv } = require("../../lib/csv");
 const { runMain } = require("../../lib/run");
 
 let db; // set in main(), so loading this file needs no credentials
@@ -50,6 +53,12 @@ let db; // set in main(), so loading this file needs no credentials
  * ── Limits ──
  * - SAMPLE_LIMIT: max docs to export per collection/subcollection query (undefined = all).
  * - LOG_EVERY: log a progress line every N docs (0 = quiet).
+ *
+ * ── Output ──
+ * - FORMAT: "json" | "csv". CSV has one row per doc (subcollections left out): maps become
+ *   dotted columns ("price.amount"), lists and other values JSON text. importCollection.js
+ *   reads the same shape back.
+ * - OUTPUT_FILE: null = print after the log; or a path to write to.
  */
 const CONFIG = {
   COLLECTION_PATH: "users",
@@ -71,6 +80,9 @@ const CONFIG = {
 
   SAMPLE_LIMIT: undefined,
   LOG_EVERY: 50,
+
+  FORMAT: "json",
+  OUTPUT_FILE: null,
 };
 
 // ──────────────────────── validation ────────────────────────
@@ -87,6 +99,10 @@ function validateConfig() {
   }
   if (typeof CONFIG.MAX_SUBCOLLECTION_DEPTH !== "number" || CONFIG.MAX_SUBCOLLECTION_DEPTH < 1) {
     throw new Error("CONFIG.MAX_SUBCOLLECTION_DEPTH must be a positive integer.");
+  }
+  if (!["json", "csv"].includes(CONFIG.FORMAT)) throw new Error('CONFIG.FORMAT must be "json" or "csv".');
+  if (CONFIG.OUTPUT_FILE !== null && (typeof CONFIG.OUTPUT_FILE !== "string" || !CONFIG.OUTPUT_FILE)) {
+    throw new Error("CONFIG.OUTPUT_FILE must be a path or null.");
   }
   if (CONFIG.SAMPLE_LIMIT !== undefined) {
     if (typeof CONFIG.SAMPLE_LIMIT !== "number" || CONFIG.SAMPLE_LIMIT < 1) {
@@ -126,6 +142,28 @@ function validateWhereClauses(clauses, label) {
 }
 
 // ──────────────────────── serialization ────────────────────────
+
+/** A serialized doc as one CSV row: maps flattened to dotted keys, anything else as JSON text. */
+function csvRowOf(doc) {
+  const row = {};
+  const walk = (obj, prefix) => {
+    for (const [k, v] of Object.entries(obj)) {
+      if (!prefix && k === "_subcollections") continue;
+      const key = prefix ? `${prefix}.${k}` : k;
+      if (v && typeof v === "object" && !Array.isArray(v) && !v._type && Object.keys(v).length) walk(v, key);
+      else row[key] = v !== null && typeof v === "object" ? JSON.stringify(v) : v;
+    }
+  };
+  walk(doc, "");
+  return row;
+}
+
+/** CSV of serialized docs: columns in first-seen order, _id and _path first. */
+function csvOf(docs) {
+  const rows = docs.map(csvRowOf);
+  const columns = [...new Set(["_id", "_path", ...rows.flatMap((r) => Object.keys(r))])];
+  return toCsv(rows, columns);
+}
 
 function serialize(value) {
   if (value === null || value === undefined) return null;
@@ -334,7 +372,16 @@ async function exportCollection() {
   }
 
   // ── Output ──
-  console.log("\n" + JSON.stringify(output, null, 2));
+  const text = CONFIG.FORMAT === "csv" ? csvOf(output) : JSON.stringify(output, null, 2) + "\n";
+  if (CONFIG.FORMAT === "csv" && CONFIG.INCLUDE_SUBCOLLECTIONS) console.log("ℹ️  CSV leaves subcollections out; use JSON to see them.");
+  if (CONFIG.OUTPUT_FILE) {
+    const file = path.resolve(CONFIG.OUTPUT_FILE);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, text);
+    console.log(`📄 Written to ${file}`);
+  } else {
+    console.log("\n" + text);
+  }
 
   return { exported: output.length };
 }
@@ -347,4 +394,4 @@ async function main() {
 
 if (require.main === module) runMain(main);
 
-module.exports = { CONFIG, main, serialize };
+module.exports = { CONFIG, main, serialize, csvRowOf, csvOf };

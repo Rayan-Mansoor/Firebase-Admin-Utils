@@ -233,3 +233,7 @@ redirect into a file: with `WHERE` filters, chosen `DOC_IDS`, a `SAMPLE_LIMIT`,
 subcollections embedded under `_subcollections` (`INCLUDE_SUBCOLLECTIONS`), or
 one subcollection gathered across every parent (`SUBCOLLECTION_TARGET`). It only
 reads.
+
+`FORMAT: "csv"` prints one row per document instead: maps become dotted columns
+(`price.amount`), lists and other values JSON text, the same shape
+`importCollection.js` reads back. `OUTPUT_FILE` writes either format to a file.

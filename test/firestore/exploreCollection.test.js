@@ -22,3 +22,18 @@ test("Firestore values print as readable JSON", () => {
     nested: { ok: true },
   });
 });
+
+test("CSV: maps become dotted columns, the rest JSON text, quoted when needed", () => {
+  const { csvRowOf, csvOf } = require("../../scripts/firestore/exploreCollection");
+  const doc = { _id: "a", _path: "p/a", price: { amount: 9 }, tags: ["x", "y"], at: { _type: "geopoint", latitude: 1, longitude: 2 }, _subcollections: { s: [] } };
+  assert.deepEqual(csvRowOf(doc), { _id: "a", _path: "p/a", "price.amount": 9, tags: '["x","y"]', at: '{"_type":"geopoint","latitude":1,"longitude":2}' });
+  assert.equal(csvOf([{ _id: "a", _path: "p/a", note: 'He said "hi", twice' }, { _id: "b", _path: "p/b", extra: 1 }]),
+    '_id,_path,note,extra\na,p/a,"He said ""hi"", twice",\nb,p/b,,1\n');
+});
+
+test("CSV written by the explorer reads back with the importer's parser", () => {
+  const { parseCsv } = require("../../lib/csv");
+  const { csvOf } = require("../../scripts/firestore/exploreCollection");
+  const rows = parseCsv(csvOf([{ _id: "a", _path: "p/a", note: "line1\nline2", name: " padded " }]));
+  assert.deepEqual(rows, [{ _id: "a", _path: "p/a", note: "line1\nline2", name: " padded " }]);
+});
