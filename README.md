@@ -381,3 +381,16 @@ default) also revokes the sessions they hold.
 ```js
 EMAILS: ["leaver@example.com"], DISABLE: true,
 ```
+
+### Storage
+
+#### `copyStoragePrefix.js`: copy a folder of files
+
+Copies every object under `FROM_PREFIX` to the same path below `TO_PREFIX`,
+metadata included. Objects already at the destination are skipped unless
+`OVERWRITE_EXISTING` is on (Storage keeps no copy of what an overwrite
+replaces). Originals are never touched.
+
+```js
+FROM_PREFIX: "avatars/", TO_PREFIX: "profile-images/",
+```
