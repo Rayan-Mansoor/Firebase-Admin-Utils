@@ -329,3 +329,15 @@ password on each user's document, for apps that show it or ask for a change.
 ```js
 EMAILS: ["someone@example.com"], TEMP_PASSWORD: "change-me-123",
 ```
+
+#### `syncAuthProfiles.js`: copy names and photos from documents into Auth
+
+Sets each Auth user's display name, photo URL or phone number from your user
+documents (`MAPPING`; a value can join several fields, like first and last
+name). Only values that differ are written, and empty ones never overwrite a
+set value. The Auth records it changes are saved first.
+
+```js
+COLLECTION: "users",
+MAPPING: { displayName: ["profile.firstName", "profile.lastName"], photoURL: "avatarUrl" },
+```
