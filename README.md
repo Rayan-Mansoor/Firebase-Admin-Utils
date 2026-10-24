@@ -359,3 +359,15 @@ Lists Auth accounts with no user document, user documents with no account, and
 with `EMAIL_FIELD` documents whose email isn't the account's. Anonymous accounts
 are left out unless `INCLUDE_ANONYMOUS` is on. `OUTPUT_FILE` saves the findings.
 It only reads.
+
+#### `deleteAuthUsers.js`: delete accounts by name or by filter
+
+Deletes the accounts in `USER_IDS` / `EMAILS`, or every account matching
+`FILTER`: anonymous, inactive for `INACTIVE_DAYS` (no sign-in, or never since
+creation) and/or disabled, all set filters together. The armed run needs
+`CONFIRM_PROJECT_ID` and saves the account records first. User documents are
+not touched.
+
+```js
+FILTER: { ANONYMOUS: true, INACTIVE_DAYS: 30 },
+```

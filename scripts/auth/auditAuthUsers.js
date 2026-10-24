@@ -8,7 +8,7 @@
 // INCLUDE_ANONYMOUS is on.
 //
 // It only reads. OUTPUT_FILE saves every finding as JSON, to feed a cleanup (such as
-// deleteCollection.js) once you have checked.
+// deleteAuthUsers.js or deleteCollection.js) once you have checked.
 //
 // Usage: set CONFIG below and run `node scripts/auth/auditAuthUsers.js`.
 
