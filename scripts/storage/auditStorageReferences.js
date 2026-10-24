@@ -9,7 +9,8 @@
 // then only gs:// and download URLs, and strings that are exactly an object's name,
 // count as references.
 //
-// It only reads. OUTPUT_FILE saves both lists as JSON.
+// It only reads. OUTPUT_FILE saves both lists as JSON; deleteStoragePrefix.js can
+// delete the orphans straight from it.
 //
 // Usage: set CONFIG below and run `node scripts/storage/auditStorageReferences.js`.
 

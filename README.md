@@ -428,3 +428,15 @@ ORIGINS: ["https://myapp.com", "http://localhost:5173"], METHODS: ["GET", "HEAD"
 
 Totals file count and size per folder, `DEPTH` levels below `PREFIX`, largest
 first, and per content type. It only reads object listings.
+
+#### `deleteStoragePrefix.js`: delete a folder, or a list of files
+
+Deletes everything under `PREFIXES`, or exactly the files a JSON list names
+(`NAMES_FILE`; the `OUTPUT_FILE` of `auditStorageReferences.js` works as is, to
+delete its orphans). The dry run lists every file and the total size; the armed
+run needs `CONFIRM_PROJECT_ID`. `DOWNLOAD_FIRST` saves each file under
+`backups/` before deleting it.
+
+```js
+NAMES_FILE: "reports/storage-audit.json", DOWNLOAD_FIRST: true,
+```
