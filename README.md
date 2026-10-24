@@ -397,3 +397,17 @@ FROM_PREFIX: "avatars/", TO_PREFIX: "profile-images/",
 
 `DELETE_SOURCE` makes it a move: each original is deleted once its own copy has
 landed; any that were skipped or failed stay.
+
+#### `auditStorageReferences.js`: orphaned files and broken file links
+
+Lists Storage files no document points at (with their total size) and document
+fields pointing at files that don't exist. References can be object paths,
+`gs://` URLs or download URLs. Name the fields in each source's `FIELDS`
+(`"items[].url"` reads every item of an array), or leave `FIELDS: null` to scan
+every string field: then bare paths only count when the file exists, so name
+the fields to catch broken bare paths. It only reads.
+
+```js
+PREFIXES: ["avatars/"],
+SOURCES: [{ COLLECTION: "users", FIELDS: ["avatarPath"] }],
+```
