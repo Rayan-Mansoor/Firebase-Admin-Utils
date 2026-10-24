@@ -440,3 +440,18 @@ run needs `CONFIRM_PROJECT_ID`. `DOWNLOAD_FIRST` saves each file under
 ```js
 NAMES_FILE: "reports/storage-audit.json", DOWNLOAD_FIRST: true,
 ```
+
+### Cloud Messaging
+
+#### `cleanupFcmTokens.js`: remove tokens that no longer work
+
+Checks every stored FCM token with a validate-only send (Google checks it,
+nothing is delivered) and removes the ones FCM reports as unregistered or
+invalid: pulled out of a token list (`MODE: "array"`), or with one token per
+document (`MODE: "docs"`) the document deleted or its field removed. Other
+errors leave tokens alone. (There is no FCM emulator, so this runs against a
+real project, even in a dry run.)
+
+```js
+COLLECTION: "users", MODE: "array", TOKEN_FIELD: "fcmTokens",
+```
