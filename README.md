@@ -423,3 +423,8 @@ bucket.)
 ```js
 ORIGINS: ["https://myapp.com", "http://localhost:5173"], METHODS: ["GET", "HEAD"],
 ```
+
+#### `storageUsage.js`: where the space goes
+
+Totals file count and size per folder, `DEPTH` levels below `PREFIX`, largest
+first, and per content type. It only reads object listings.
