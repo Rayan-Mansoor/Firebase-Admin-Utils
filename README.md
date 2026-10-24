@@ -211,3 +211,17 @@ COLLECTION: "lessons", ARRAY_PATH: "slots",
 LABEL_FIELD: "teacherName", ID_FIELD: "teacherId",
 LOOKUP_COLLECTION: "teachers", LOOKUP_LABEL_FIELDS: ["displayName"],
 ```
+
+#### `importCollection.js`: load JSON or CSV into a collection
+
+Imports a JSON file (an array of objects, or `{ id: object }`; values may use the
+backup format's type tags) or a CSV file (header row; `TYPES` turns cells into
+numbers, booleans, timestamps or JSON; a header like `price.amount` builds a
+nested map). Each document's id comes from `ID_FIELD`, or is generated.
+`MODE: "create"` skips existing ids, `"merge"` updates only the fields given,
+`"overwrite"` replaces documents whole. A bad row stops the import before
+anything is written.
+
+```bash
+node scripts/firestore/importCollection.js data/products.csv
+```
