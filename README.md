@@ -65,6 +65,7 @@ a dry run, then run it for real.
 | `lib/` | Code the scripts share: the backup format, guarded writes, paging. |
 | `scripts/<area>/` | The scripts, by area: `firestore`, `auth`, `storage`, `messaging`, `stripe`. |
 | `test/` | Tests of the scripts' decisions: `npm test`, no Firebase needed. |
+| `projects/` | The author's scripts for their own projects, built on this toolkit. Not general purpose. |
 | `backups/` | Backups and before-write snapshots. Git ignores it. |
 
 ---
@@ -467,3 +468,14 @@ extension's shape by default). `SETUP_SECRET_FIELD` also stores a SetupIntent's
 client secret. The dry run makes no Stripe calls; reruns never create a second
 customer. Needs `STRIPE_API_KEY` in `.env`; a live-mode key needs
 `ALLOW_LIVE_MODE`.
+
+---
+
+## Project scripts
+
+`projects/<name>/` holds scripts written for one specific project's data model.
+They show the toolkit in use, but expect that project's collections and its
+sibling repositories, so they won't run elsewhere as they are.
+
+- `projects/alce/setAdminStatus.js`: grants or revokes staff access and the
+  master flag in the ALCE platform.
