@@ -278,3 +278,14 @@ JSON. It only reads.
 ```bash
 node scripts/firestore/changesSince.js backups/firestore-<project>-<time>.ndjson
 ```
+
+#### `findDuplicates.js`: documents that share a value
+
+Groups documents whose `FIELDS` hold the same value (one field, or several taken
+together), comparing strings with case, spacing and accents ignored as you
+choose. Empty values are left out unless `INCLUDE_EMPTY` is on. `OUTPUT_FILE`
+saves every group. It only reads.
+
+```js
+COLLECTION: "users", FIELDS: ["email"],
+```
