@@ -479,3 +479,5 @@ sibling repositories, so they won't run elsewhere as they are.
 
 - `projects/alce/setAdminStatus.js`: grants or revokes staff access and the
   master flag in the ALCE platform.
+- `projects/alce/checkPermissionsDrift.js`: checks that the ALCE permission keys
+  agree across its functions, security rules, admin panel and stored access.
