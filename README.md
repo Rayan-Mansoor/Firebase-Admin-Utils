@@ -455,3 +455,15 @@ real project, even in a dry run.)
 ```js
 COLLECTION: "users", MODE: "array", TOKEN_FIELD: "fcmTokens",
 ```
+
+### Stripe
+
+#### `createStripeCustomers.js`: Stripe customers for existing users
+
+Creates a Stripe customer (metadata `firebase_uid`) for every Auth user with an
+email and no customer document yet, and stores its id in
+`stripe_customers/{uid}.customer_id` (names configurable; the Stripe Firebase
+extension's shape by default). `SETUP_SECRET_FIELD` also stores a SetupIntent's
+client secret. The dry run makes no Stripe calls; reruns never create a second
+customer. Needs `STRIPE_API_KEY` in `.env`; a live-mode key needs
+`ALLOW_LIVE_MODE`.
