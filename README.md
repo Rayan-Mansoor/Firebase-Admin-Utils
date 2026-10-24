@@ -85,3 +85,19 @@ node scripts/firestore/backupFirestore.js              # the whole database
 node scripts/firestore/backupFirestore.js users posts  # these collections
 node scripts/firestore/backupFirestore.js users/abc    # one doc and everything under it
 ```
+
+#### `restoreFirestore.js`: restore a backup
+
+Restores a backup file, all of it or only some paths (`TARGETS`). It checks the
+whole file first, refuses a backup from another project unless you allow it,
+and snapshots what it is about to overwrite into `backups/pre-restore-*.ndjson`.
+
+| `MODE` | What happens |
+|---|---|
+| `overwrite` (default) | each backed-up doc becomes exactly its backup; newer docs stay |
+| `merge` | backed-up fields are laid over what is there now |
+| `wipe` | the restore scope is deleted first, then written: a true point-in-time restore. Needs `CONFIRM_PROJECT_ID` |
+
+```bash
+node scripts/firestore/restoreFirestore.js backups/firestore-<project>-<time>.ndjson
+```
