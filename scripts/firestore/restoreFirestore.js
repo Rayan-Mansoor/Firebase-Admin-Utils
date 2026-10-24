@@ -1,5 +1,6 @@
 // scripts/firestore/restoreFirestore.js
-// Restore Firestore from a backup file written by backupFirestore.js. Built as an
+// Restore Firestore from a backup file written by backupFirestore.js, or from the
+// snapshot any script saves before it writes (backups/<script>-*.ndjson). Built as an
 // emergency-restore tool: everything is validated before anything is touched.
 //
 // MODES (CONFIG.MODE):
@@ -103,6 +104,12 @@ async function main() {
     throw new Error(
       `Backup is from project '${meta.projectId}' but you are connected to '${projectId}'. Set ALLOW_CROSS_PROJECT = true if this is intentional.`
     );
+  }
+
+  // A script's before-state holds only the docs it changed, not their subtrees:
+  // wiping its roots would delete what it never saved.
+  if (meta.kind === "before-state" && CONFIG.MODE === "wipe") {
+    throw new Error('This is a before-write snapshot of single documents; restore it with MODE "overwrite", not "wipe".');
   }
 
   // Scope = what gets pre-backed-up, and deleted first in wipe mode.

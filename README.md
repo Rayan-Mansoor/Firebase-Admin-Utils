@@ -73,6 +73,15 @@ a dry run, then run it for real.
 
 ### Firestore
 
+Most Firestore scripts choose their documents with the same four `CONFIG` keys:
+`COLLECTION` (a collection path such as `users` or `users/abc/posts`),
+`USE_COLLECTION_GROUP` (every collection with that id, at any depth), `WHERE`
+(`[[field, op, value], ...]`) and `DOC_IDS` (only these ids). Documents are
+read a page at a time, so large collections are fine.
+
+Any script's before-write snapshot in `backups/` restores with
+`restoreFirestore.js` in `overwrite` mode.
+
 #### `backupFirestore.js`: back up the database to a file
 
 Backs up the whole database, or chosen collections, subcollections or document
@@ -100,4 +109,20 @@ and snapshots what it is about to overwrite into `backups/pre-restore-*.ndjson`.
 
 ```bash
 node scripts/firestore/restoreFirestore.js backups/firestore-<project>-<time>.ndjson
+```
+
+#### `alterFields.js`: change field values
+
+Applies value rules, in order, to every chosen document: `set`, `copy`,
+`increment`, `replace` (regex, strings only), `coerce` (to string, number, int
+or boolean) and `serverTimestamp`. Each rule can be limited with `onlyIf`
+(`exists`, `missing`, or `equals` a value). `ARRAY_ALTERS` applies the same
+rules to the objects inside an array field. A rule that would leave a value as
+it is writes nothing, so running it twice is harmless.
+
+```js
+ALTERS: [
+  { op: "set", path: "status", value: "active", onlyIf: "missing" },
+  { op: "coerce", path: "age", type: "int" },
+],
 ```
