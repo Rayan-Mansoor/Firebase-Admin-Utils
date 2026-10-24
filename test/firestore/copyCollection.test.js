@@ -20,3 +20,13 @@ test("same, nested or document paths are refused", () => {
   assert.throws(() => validateConfig(cfg({ DESTINATION_COLLECTION: "users/a/copies" })), /nested/);
   assert.throws(() => validateConfig(cfg({ SOURCE_COLLECTION: "users/a" })), /document path/);
 });
+
+test("TRANSFORM reshapes, drops undefined fields, or skips with null", () => {
+  const { transformCopy } = require("../../scripts/firestore/copyCollection");
+  const copy = { from: "users/a", to: "people/a", data: { x: 1, old: 2 } };
+  const t = (data, { id, destPath }) => (data.x === 0 ? null : { ...data, id, destPath, old: undefined });
+  assert.deepEqual(transformCopy(copy, t).data, { x: 1, id: "a", destPath: "people/a" });
+  assert.equal(transformCopy({ ...copy, data: { x: 0 } }, t), null);
+  assert.equal(transformCopy(copy, null), copy);
+  assert.throws(() => transformCopy(copy, () => 5), /return an object or null/);
+});

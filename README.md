@@ -155,3 +155,12 @@ SOURCE_COLLECTION: "users",
 DESTINATION_COLLECTION: "archive/2026/users",
 INCLUDE_SUBCOLLECTIONS: true,
 ```
+
+`TRANSFORM` reshapes each document on the way: a function given the data and
+`{ id, path, destPath }` that returns the new data, or `null` to skip the
+document. Fields it sets to `undefined` are dropped. A move that skipped
+documents keeps its source.
+
+```js
+TRANSFORM: (data, { id }) => ({ name: `${data.first} ${data.last}`, migratedFrom: id }),
+```
