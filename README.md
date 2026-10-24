@@ -237,3 +237,10 @@ reads.
 `FORMAT: "csv"` prints one row per document instead: maps become dotted columns
 (`price.amount`), lists and other values JSON text, the same shape
 `importCollection.js` reads back. `OUTPUT_FILE` writes either format to a file.
+
+#### `inferSchema.js`: describe what a collection holds
+
+Reads a collection, or every root collection (`COLLECTION_PATH: "*"`), and prints
+a YAML profile of its documents: each field's types, whether it is always there
+or can be null, maps keyed by ids, subcollections, and an example document.
+Handy for documenting a database or handing its shape to an LLM. It only reads.
