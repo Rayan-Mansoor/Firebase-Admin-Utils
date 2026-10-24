@@ -289,3 +289,18 @@ saves every group. It only reads.
 ```js
 COLLECTION: "users", FIELDS: ["email"],
 ```
+
+#### `checkReferences.js`: find links to documents that don't exist
+
+For each rule in `REFERENCES`, reads a field holding an id, a path or a
+DocumentReference (or a list of them; with `arrayPath`, from each object of an
+array field) and reports every one whose document doesn't exist, plus values
+that can't name a document at all. `OUTPUT_FILE` saves the list. It only reads.
+
+```js
+COLLECTION: "orders",
+REFERENCES: [
+  { field: "customerId", collection: "users" },
+  { field: "productId", collection: "products", arrayPath: "lines" },
+],
+```
