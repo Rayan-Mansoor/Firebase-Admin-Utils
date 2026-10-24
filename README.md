@@ -141,3 +141,17 @@ FIELD_PATHS: ["legacyId", "profile.oldAvatar"],
 SUBCOLLECTIONS_TO_DELETE: ["sessions"],
 HARD_DELETE: true,
 ```
+
+#### `copyCollection.js`: copy or move a collection
+
+Copies every document to the same id under another collection, optionally with
+all subcollections (`INCLUDE_SUBCOLLECTIONS`). With `IS_DESTRUCTIVE` it becomes a
+move: once every copy has landed, the source is backed up and deleted.
+Destination documents it overwrites are saved first. References inside the
+documents are copied as they are.
+
+```js
+SOURCE_COLLECTION: "users",
+DESTINATION_COLLECTION: "archive/2026/users",
+INCLUDE_SUBCOLLECTIONS: true,
+```
