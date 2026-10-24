@@ -244,3 +244,11 @@ Reads a collection, or every root collection (`COLLECTION_PATH: "*"`), and print
 a YAML profile of its documents: each field's types, whether it is always there
 or can be null, maps keyed by ids, subcollections, and an example document.
 Handy for documenting a database or handing its shape to an LLM. It only reads.
+
+#### `lintCollectionSchema.js`: find inconsistent documents
+
+Checks one collection for documents that break its own pattern: fields most
+documents have but some lack (`REQUIRED_THRESHOLD`), a field stored with
+different types, rare fields (often typos), name variants such as `firstName`
+and `first_name`, and strings that fail a regex you set
+(`STRING_REGEX_RULES`). Prints YAML with example document ids. It only reads.

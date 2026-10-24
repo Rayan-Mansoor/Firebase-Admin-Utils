@@ -1,17 +1,20 @@
 // test/firestore/schemaTools.test.js
 //
-// The value typing and YAML output of inferSchema. No Firestore.
+// The value typing and YAML output of inferSchema and lintCollectionSchema. No Firestore.
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const { Timestamp, GeoPoint } = require("firebase-admin").firestore;
 const infer = require("../../scripts/firestore/inferSchema");
+const lint = require("../../scripts/firestore/lintCollectionSchema");
 
-test("inferSchema names Firestore value kinds", () => {
-  assert.equal(infer.detectKind(new Timestamp(0, 0)), "timestamp");
-  assert.equal(infer.detectKind(new GeoPoint(0, 0)), "geopoint");
-  assert.equal(infer.detectKind("x"), "string");
-  assert.equal(infer.detectKind(null), "null");
+test("both tools name Firestore value kinds the same way", () => {
+  for (const { detectKind } of [infer, lint]) {
+    assert.equal(detectKind(new Timestamp(0, 0)), "timestamp");
+    assert.equal(detectKind(new GeoPoint(0, 0)), "geopoint");
+    assert.equal(detectKind("x"), "string");
+    assert.equal(detectKind(null), "null");
+  }
 });
 
 test("inferSchema spots maps keyed by ids rather than field names", () => {
@@ -19,6 +22,11 @@ test("inferSchema spots maps keyed by ids rather than field names", () => {
   assert.equal(infer.looksLikeDynamicKeys(["firstName", "lastName"]), false);
 });
 
+test("lintCollectionSchema flattens nested fields and groups name variants", () => {
+  assert.deepEqual(Object.keys(lint.flattenDoc({ a: { b: 1, at: new Timestamp(0, 0) }, c: [1] })), ["a.b", "a.at", "c"]);
+  assert.equal(lint.normalizeFieldName("first_Name"), lint.normalizeFieldName("firstName"));
+});
+
 test("YAML output is plain text", () => {
-  assert.match(infer.toYAML({ a: 1, b: ["x"] }), /a: 1/);
+  for (const { toYAML } of [infer, lint]) assert.match(toYAML({ a: 1, b: ["x"] }), /a: 1/);
 });
