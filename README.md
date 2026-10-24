@@ -252,3 +252,16 @@ documents have but some lack (`REQUIRED_THRESHOLD`), a field stored with
 different types, rare fields (often typos), name variants such as `firstName`
 and `first_name`, and strings that fail a regex you set
 (`STRING_REGEX_RULES`). Prints YAML with example document ids. It only reads.
+
+#### `diffCollections.js`: compare two collections, or a collection and a backup
+
+Pairs documents by their path below the collection and reports those only on
+one side, plus every field that differs on the rest (nested fields by dotted
+path). Compare a copy with its source, or the live collection with a backup to
+see what changed since. `IGNORE_FIELDS` leaves noise like `updatedAt` out;
+`OUTPUT_FILE` saves the full report. It only reads.
+
+```js
+LEFT: { collection: "users", backupFile: "backups/firestore-<project>-<time>.ndjson" },
+RIGHT: { collection: "users" },
+```
