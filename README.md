@@ -265,3 +265,16 @@ see what changed since. `IGNORE_FIELDS` leaves noise like `updatedAt` out;
 LEFT: { collection: "users", backupFile: "backups/firestore-<project>-<time>.ndjson" },
 RIGHT: { collection: "users" },
 ```
+
+#### `changesSince.js`: what changed since a backup
+
+Lists the documents created, updated and deleted since a backup was taken,
+across everything the backup covers (a full backup also catches new root
+collections). It goes by Firestore's own create and update times, so it is
+quick; `diffCollections.js` shows the fields. Without a backup, `SINCE` finds
+created and updated documents (not deletions). `OUTPUT_FILE` saves the paths as
+JSON. It only reads.
+
+```bash
+node scripts/firestore/changesSince.js backups/firestore-<project>-<time>.ndjson
+```
