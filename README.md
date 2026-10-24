@@ -127,3 +127,17 @@ ALTERS: [
   { op: "move", from: "first_name", to: "firstName" },
 ],
 ```
+
+#### `scrubFields.js`: remove fields and subcollections
+
+Deletes fields (or sets them to `null` with `HARD_DELETE: false`), strips keys
+from the objects inside array fields (`ARRAY_CLEANERS`), and can delete whole
+subcollections under each chosen document (`SUBCOLLECTIONS_TO_DELETE`, always a
+real delete). The dry run counts each subcollection's documents; the armed run
+saves both the documents and the subcollections before touching them.
+
+```js
+FIELD_PATHS: ["legacyId", "profile.oldAvatar"],
+SUBCOLLECTIONS_TO_DELETE: ["sessions"],
+HARD_DELETE: true,
+```
