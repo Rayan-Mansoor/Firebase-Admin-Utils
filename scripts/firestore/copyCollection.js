@@ -138,7 +138,7 @@ async function main() {
     throw new Error("Some copies failed, so the source was NOT deleted. Run it again.");
   }
   if (skipped) {
-    throw new Error(`TRANSFORM skipped ${skipped} docs, so the source was NOT deleted: they exist only there. Delete it yourself once you have checked.`);
+    throw new Error(`TRANSFORM skipped ${skipped} docs, so the source was NOT deleted: they exist only there. Delete it with deleteCollection.js once you have checked.`);
   }
   const outPath = path.join(BACKUPS_DIR, defaultBackupFilename(projectId, { full: false, prefix: "copy-collection-source" }));
   const saved = await backupToFile(db, { targets: [src], outPath, projectId, log: () => {} });

@@ -164,3 +164,16 @@ documents keeps its source.
 ```js
 TRANSFORM: (data, { id }) => ({ name: `${data.first} ${data.last}`, migratedFrom: id }),
 ```
+
+#### `deleteCollection.js`: delete safely, after a checked backup
+
+Deletes collections or document subtrees (`PATHS`), or the documents a query
+matches (`COLLECTION` with `WHERE` or `DOC_IDS`, with their subcollections unless
+`INCLUDE_SUBCOLLECTIONS` is off). The armed run needs `CONFIRM_PROJECT_ID`, backs
+everything up, re-reads what is there and deletes only if every document is in
+the backup.
+
+```js
+PATHS: ["legacy_users"],               // or:
+COLLECTION: "logs", WHERE: [["createdAt", "<", someTimestamp]],
+```
